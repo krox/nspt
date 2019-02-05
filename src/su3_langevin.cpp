@@ -12,76 +12,127 @@ using namespace util;
 GridCartesian *grid;
 GridRedBlackCartesian *rbGrid;
 
-void evolve(LatticeGaugeField &U, RealD beta, double eps, int count,
-            [[maybe_unused]] GridSerialRNG &sRNG, GridParallelRNG &pRNG)
+/** Langevin evolution for (quenched) SU(3) lattice theory */
+class Langevin
 {
-	LatticeGaugeField force(grid);
-	LatticeColourMatrix link(grid);
-	LatticeColourMatrix drift(grid);
-	LatticeColourMatrix rot(grid);
+  public:
+	GridCartesian *grid;
+	GridRedBlackCartesian *rbGrid;
+	GridParallelRNG pRNG;
+	GridSerialRNG sRNG;
 
-	WilsonGaugeActionD action(beta);
+	// gauge config
+	LatticeGaugeField U;
 
-	for (int i = 0; i < count; ++i)
+	// temporaries
+	LatticeGaugeField force, force2;
+	LatticeColourMatrix Umu, drift, rot, tmp1, tmp2;
+
+	/** NOTE: does not initialize gauge field */
+	Langevin(std::vector<int> latt)
+	    : grid(SpaceTimeGrid::makeFourDimGrid(
+	          latt, GridDefaultSimd(Nd, vComplex::Nsimd()), GridDefaultMpi())),
+	      rbGrid(SpaceTimeGrid::makeFourDimRedBlackGrid(grid)), pRNG(grid),
+	      U(grid), force(grid), force2(grid), Umu(grid), drift(grid), rot(grid),
+	      tmp1(grid), tmp2(grid)
 	{
-		// force term from action
+		std::vector<int> pseeds({1, 2, 3, 4, 5});
+		std::vector<int> sseeds({6, 7, 8, 9, 10});
+		pRNG.SeedFixedIntegers(pseeds);
+		sRNG.SeedFixedIntegers(sseeds);
+	}
+
+	void makeNoise(LatticeColourMatrix &out, double eps)
+	{
+		// this iscorrect for abelian groups
+		SU3::GaussianFundamentalLieAlgebraMatrix(pRNG, out, eps);
+
+		// naive improvement (works, but seems not significant)
+		// Idea: split eps in two parts, and use BCH formula to multiply
+		/*SU3::GaussianFundamentalLieAlgebraMatrix(pRNG, tmp1,
+		                                         std::sqrt(0.5) * eps);
+		SU3::GaussianFundamentalLieAlgebraMatrix(pRNG, tmp2,
+		                                         std::sqrt(0.5) * eps);
+		out = tmp1 + tmp2 + 0.5 * (tmp1 * tmp2 - tmp2 * tmp1);*/
+	}
+
+	/** 1st order method (forward Euler) */
+	void evolveStep(RealD beta, double eps)
+	{
+		WilsonGaugeActionD action(beta);
 		action.deriv(U, force);
 
 		for (int mu = 0; mu < Nd; ++mu)
 		{
-			SU3::GaussianFundamentalLieAlgebraMatrix(
-			    pRNG, drift, std::sqrt(2.0) * std::sqrt(eps));
-			// drift = Ta(drift);
+			makeNoise(drift, std::sqrt(2.0 * eps));
 			drift += -eps * peekLorentz(force, mu);
 			SU3::taExp(drift, rot);
-			link = peekLorentz(U, mu);
-			pokeLorentz(U, rot * link, mu);
+			Umu = peekLorentz(U, mu);
+			pokeLorentz(U, rot * Umu, mu);
 		}
 
 		ProjectOnGroup(U);
 	}
-}
+
+	/** second order method (Heun method) */
+	void evolveStepImproved(RealD beta, double eps)
+	{
+		WilsonGaugeActionD action(beta);
+
+		// force at t=0
+		action.deriv(U, force);
+
+		// evolve with force + drift to t=eps
+		for (int mu = 0; mu < Nd; ++mu)
+		{
+			makeNoise(drift, std::sqrt(2.0 * eps));
+			drift += -eps * peekLorentz(force, mu);
+			SU3::taExp(drift, rot);
+			Umu = peekLorentz(U, mu);
+			pokeLorentz(U, rot * Umu, mu);
+		}
+
+		// force at new point
+		action.deriv(U, force2);
+
+		// correct to 0.5*(force + force2)
+		for (int mu = 0; mu < Nd; ++mu)
+		{
+			drift =
+			    -eps * 0.5 * (peekLorentz(force2, mu) - peekLorentz(force, mu));
+			SU3::taExp(drift, rot);
+			Umu = peekLorentz(U, mu);
+			pokeLorentz(U, rot * Umu, mu);
+		}
+		ProjectOnGroup(U);
+	}
+};
 
 int main(int argc, char **argv)
 {
 	Grid_init(&argc, &argv);
 
-	// use default grid size (i.e. from command line)
-	grid = SpaceTimeGrid::makeFourDimGrid(
-	    GridDefaultLatt(), GridDefaultSimd(Nd, vComplex::Nsimd()),
-	    GridDefaultMpi());
-	rbGrid = SpaceTimeGrid::makeFourDimRedBlackGrid(grid);
+	auto lang = Langevin(GridDefaultLatt());
 
-	// arbitrary random seeds
-	std::vector<int> pseeds({1, 2, 3, 4, 5});
-	std::vector<int> sseeds({6, 7, 8, 9, 10});
-	GridParallelRNG pRNG(grid);
-	pRNG.SeedFixedIntegers(pseeds);
-	GridSerialRNG sRNG;
-	sRNG.SeedFixedIntegers(sseeds);
+	auto plot = Gnuplot();
+	plot.style = "lines";
 
-	// gauge config (hot start at small beta)
-	LatticeGaugeField U(grid);
-	SU3::HotConfiguration(pRNG, U);
+	double beta = 6.0;
+	double maxT = 10.0;
 
-	int count = 51;
-	double betaMin = 8.0;
-	double betaMax = 0.0;
-
-	std::vector<double> xs, ys;
-
-	for (int i = 0; i < count; ++i)
+	for (double eps = 0.1; eps > 0.01; eps /= 2.0)
 	{
-		double beta = betaMin + (betaMax - betaMin) / (count - 1) * i;
-		evolve(U, beta, 0.02, 500, sRNG, pRNG);
+		std::vector<double> xs, ys;
 
-		RealD plaq = ColourWilsonLoops::avgPlaquette(U);
-		fmt::print("beta = {}, plaq = {}\n", beta, plaq);
-
-		xs.push_back(beta);
-		ys.push_back(plaq);
+		lang.U = 1.0;
+		for (double t = 0.0; t < maxT; t += eps)
+		{
+			xs.push_back(t);
+			ys.push_back(ColourWilsonLoops::avgPlaquette(lang.U));
+			lang.evolveStepImproved(beta, eps);
+		}
+		plot.plotData(xs, ys, fmt::format("eps = {}", eps));
 	}
-	Gnuplot().plotData(xs, ys);
 
 	Grid_finalize();
 }
