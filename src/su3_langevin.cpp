@@ -1,16 +1,15 @@
 #include "Grid/Grid.h"
 
+#include "util/gnuplot.h"
+#include <fmt/format.h>
+
 using namespace std;
 using namespace Grid;
 using namespace Grid::QCD;
 
-#include "util/gnuplot.h"
-#include <fmt/format.h>
+#include "nspt/wilson.h"
 
 using namespace util;
-
-GridCartesian *grid;
-GridRedBlackCartesian *rbGrid;
 
 /** Langevin evolution for (quenched) SU(3) lattice theory */
 class Langevin
@@ -22,19 +21,24 @@ class Langevin
 	GridSerialRNG sRNG;
 
 	// gauge config
-	LatticeGaugeField U;
+	std::array<LatticeColourMatrix, 4> U;
 
 	// temporaries
-	LatticeGaugeField force, force2;
+	std::array<LatticeColourMatrix, 4> force, force2;
 	LatticeColourMatrix Umu, drift, rot, tmp1, tmp2;
 
 	/** NOTE: does not initialize gauge field */
 	Langevin(std::vector<int> latt)
 	    : grid(SpaceTimeGrid::makeFourDimGrid(
 	          latt, GridDefaultSimd(Nd, vComplex::Nsimd()), GridDefaultMpi())),
-	      rbGrid(SpaceTimeGrid::makeFourDimRedBlackGrid(grid)), pRNG(grid),
-	      U(grid), force(grid), force2(grid), Umu(grid), drift(grid), rot(grid),
-	      tmp1(grid), tmp2(grid)
+	      rbGrid(SpaceTimeGrid::makeFourDimRedBlackGrid(grid)),
+	      pRNG(grid), U{LatticeColourMatrix(grid), LatticeColourMatrix(grid),
+	                    LatticeColourMatrix(grid), LatticeColourMatrix(grid)},
+	      force{LatticeColourMatrix(grid), LatticeColourMatrix(grid),
+	            LatticeColourMatrix(grid), LatticeColourMatrix(grid)},
+	      force2{LatticeColourMatrix(grid), LatticeColourMatrix(grid),
+	             LatticeColourMatrix(grid), LatticeColourMatrix(grid)},
+	      Umu(grid), drift(grid), rot(grid), tmp1(grid), tmp2(grid)
 	{
 		std::vector<int> pseeds({1, 2, 3, 4, 5});
 		std::vector<int> sseeds({6, 7, 8, 9, 10});
@@ -59,52 +63,51 @@ class Langevin
 	/** 1st order method (forward Euler) */
 	void evolveStep(RealD beta, double eps)
 	{
-		WilsonGaugeActionD action(beta);
-		action.deriv(U, force);
-
-		for (int mu = 0; mu < Nd; ++mu)
-		{
-			makeNoise(drift, std::sqrt(2.0 * eps));
-			drift += -eps * peekLorentz(force, mu);
-			SU3::taExp(drift, rot);
-			Umu = peekLorentz(U, mu);
-			pokeLorentz(U, rot * Umu, mu);
-		}
-
-		ProjectOnGroup(U);
-	}
-
-	/** second order method (Heun method) */
-	void evolveStepImproved(RealD beta, double eps)
-	{
-		WilsonGaugeActionD action(beta);
-
 		// force at t=0
-		action.deriv(U, force);
+		for (int mu = 0; mu < 4; ++mu)
+			wilsonDeriv(force[mu], U, mu);
 
 		// evolve with force + drift to t=eps
 		for (int mu = 0; mu < Nd; ++mu)
 		{
 			makeNoise(drift, std::sqrt(2.0 * eps));
-			drift += -eps * peekLorentz(force, mu);
+			drift += (-eps * beta) * force[mu];
 			SU3::taExp(drift, rot);
-			Umu = peekLorentz(U, mu);
-			pokeLorentz(U, rot * Umu, mu);
+			U[mu] = rot * U[mu];
+		}
+
+		// ProjectOnGroup(U);
+	}
+
+	/** second order method (Heun method) */
+	void evolveStepImproved(RealD beta, double eps)
+	{
+		// force at t=0
+		for (int mu = 0; mu < 4; ++mu)
+			wilsonDeriv(force[mu], U, mu);
+
+		// evolve with force + drift to t=eps
+		for (int mu = 0; mu < Nd; ++mu)
+		{
+			makeNoise(drift, std::sqrt(2.0 * eps));
+			drift += (-eps * beta) * force[mu];
+			SU3::taExp(drift, rot);
+			U[mu] = rot * U[mu];
 		}
 
 		// force at new point
-		action.deriv(U, force2);
+		for (int mu = 0; mu < 4; ++mu)
+			wilsonDeriv(force2[mu], U, mu);
 
 		// correct to 0.5*(force + force2)
 		for (int mu = 0; mu < Nd; ++mu)
 		{
-			drift =
-			    -eps * 0.5 * (peekLorentz(force2, mu) - peekLorentz(force, mu));
+			drift = (-eps * beta * 0.5) * (force2[mu] - force[mu]);
 			SU3::taExp(drift, rot);
-			Umu = peekLorentz(U, mu);
-			pokeLorentz(U, rot * Umu, mu);
+			U[mu] = rot * U[mu];
 		}
-		ProjectOnGroup(U);
+
+		// ProjectOnGroup(U);
 	}
 };
 
@@ -124,11 +127,14 @@ int main(int argc, char **argv)
 	{
 		std::vector<double> xs, ys;
 
-		lang.U = 1.0;
+		lang.U[0] = 1.0;
+		lang.U[1] = 1.0;
+		lang.U[2] = 1.0;
+		lang.U[3] = 1.0;
 		for (double t = 0.0; t < maxT; t += eps)
 		{
 			xs.push_back(t);
-			ys.push_back(ColourWilsonLoops::avgPlaquette(lang.U));
+			ys.push_back(avgPlaquette(lang.U));
 			lang.evolveStepImproved(beta, eps);
 		}
 		plot.plotData(xs, ys, fmt::format("eps = {}", eps));

@@ -1,21 +1,22 @@
 #include "Grid/Grid.h"
 
+#include "util/gnuplot.h"
+#include <fmt/format.h>
+
 using namespace std;
 using namespace Grid;
 using namespace Grid::QCD;
 
-#include "util/gnuplot.h"
-#include <fmt/format.h>
+#include "nspt/wilson.h"
 
 using namespace util;
 
 GridCartesian *grid;
 GridRedBlackCartesian *rbGrid;
 
-void thermalize(LatticeGaugeField &U, RealD beta, int count,
+void thermalize(std::array<LatticeColourMatrix, 4> &U, RealD beta, int count,
                 GridSerialRNG &sRNG, GridParallelRNG &pRNG)
 {
-	LatticeColourMatrix link(grid);
 	LatticeColourMatrix staple(grid);
 
 	int subsets[2] = {Even, Odd};
@@ -24,7 +25,6 @@ void thermalize(LatticeGaugeField &U, RealD beta, int count,
 	LatticeInteger mask(grid);
 
 	for (int sweep = 0; sweep < count; sweep++)
-	{
 		for (int cb = 0; cb < 2; cb++)
 		{
 			one.checkerboard = subsets[cb];
@@ -33,19 +33,12 @@ void thermalize(LatticeGaugeField &U, RealD beta, int count,
 
 			for (int mu = 0; mu < Nd; mu++)
 			{
-				ColourWilsonLoops::Staple(staple, U, mu);
-				link = peekLorentz(U, mu);
-
+				stapleSum(staple, U, mu);
 				for (int sub = 0; sub < SU3::su2subgroups(); sub++)
-					SU3::SubGroupHeatBath(sRNG, pRNG, beta, link, staple, sub,
+					SU3::SubGroupHeatBath(sRNG, pRNG, beta, U[mu], staple, sub,
 					                      5, mask);
-
-				pokeLorentz(U, link, mu);
 			}
 		}
-
-		ProjectOnGroup(U);
-	}
 }
 
 int main(int argc, char **argv)
@@ -67,8 +60,13 @@ int main(int argc, char **argv)
 	sRNG.SeedFixedIntegers(sseeds);
 
 	// gauge config (hot start at small beta)
-	LatticeGaugeField U(grid);
-	SU3::HotConfiguration(pRNG, U);
+	std::array<LatticeColourMatrix, 4> U{
+	    LatticeColourMatrix(grid), LatticeColourMatrix(grid),
+	    LatticeColourMatrix(grid), LatticeColourMatrix(grid)};
+	U[0] = 1.0;
+	U[1] = 1.0;
+	U[2] = 1.0;
+	U[3] = 1.0;
 
 	int count = 51;
 	double betaMin = 0.0;
@@ -81,12 +79,16 @@ int main(int argc, char **argv)
 		double beta = betaMin + (betaMax - betaMin) / (count - 1) * i;
 		thermalize(U, beta, 20, sRNG, pRNG);
 
-		RealD plaq = ColourWilsonLoops::avgPlaquette(U);
-		fmt::print("beta = {}, plaq = {}\n", beta, plaq);
+		double plaq = avgPlaquette(U);
+		double err = 0.0;
+		for (int mu = 0; mu < 4; ++mu)
+			err += norm2(LatticeColourMatrix(U[mu] * adj(U[mu]) - 1.0));
+		fmt::print("beta = {}, plaq = {}, unit-error = {}\n", beta, plaq, err);
 
 		xs.push_back(beta);
 		ys.push_back(plaq);
 	}
+
 	Gnuplot().plotData(xs, ys);
 
 	Grid_finalize();
