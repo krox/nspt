@@ -77,56 +77,7 @@ class Langevin
 
 		// TODO: check/project unitarity (order by order)
 	}
-
-	/*std::vector<double> avgPlaquette() const
-	{
-	    auto r = std::vector<double>(degree, 0.0);
-
-	    for (int mu = 0; mu < 4; ++mu)
-	        for (int nu = mu + 1; nu < 4; ++nu)
-	        {
-
-	            TLatticeColourMatrix plaq = U[mu] * Cshift(U[nu], mu, 1) *
-	                                        Cshift(adj(U[mu]), nu, 1) *
-	                                        adj(U[nu]);
-	            for (int i = 0; i < degree; ++i)
-	                r[i] += sum(trace(plaq[i]));
-	        }
-	}*/
 };
-
-/** second order method (Heun method) */
-/*void evolveStepImproved(RealD beta, double eps)
-{
-    WilsonGaugeActionD action(beta);
-
-    // force at t=0
-    action.deriv(U, force);
-
-    // evolve with force + drift to t=eps
-    for (int mu = 0; mu < Nd; ++mu)
-    {
-        makeNoise(drift, std::sqrt(2.0 * eps));
-        drift += -eps * peekLorentz(force, mu);
-        SU3::taExp(drift, rot);
-        Umu = peekLorentz(U, mu);
-        pokeLorentz(U, rot * Umu, mu);
-    }
-
-    // force at new point
-    action.deriv(U, force2);
-
-    // correct to 0.5*(force + force2)
-    for (int mu = 0; mu < Nd; ++mu)
-    {
-        drift =
-            -eps * 0.5 * (peekLorentz(force2, mu) - peekLorentz(force, mu));
-        SU3::taExp(drift, rot);
-        Umu = peekLorentz(U, mu);
-        pokeLorentz(U, rot * Umu, mu);
-    }
-    ProjectOnGroup(U);
-}*/
 
 int main(int argc, char **argv)
 {
@@ -145,7 +96,6 @@ int main(int argc, char **argv)
 	// evolve it some time
 	for (double t = 0.0; t < maxT; t += eps)
 	{
-
 		Series<double> p = avgPlaquette(lang.U);
 
 		fmt::print("t = {}", t);
@@ -161,8 +111,16 @@ int main(int argc, char **argv)
 	}
 
 	auto plot = Gnuplot();
+	plot.style = "lines";
 	for (int i = 0; i < degree; ++i)
-		plot.plotData(xs, ys[i], fmt::format("order {}", i));
+	{
+		plot.plotData(xs, ys[i], fmt::format("beta**{}", -0.5 * i));
+		double avg = mean(
+		    span<const double>(ys[i]).subspan(ys[i].size() / 2, ys[i].size()));
+		plot.hline(avg);
+	}
+
+	plot.savefig("nstp.pdf");
 
 	Grid_finalize();
 }
