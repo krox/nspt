@@ -31,18 +31,15 @@ Series<double> avgPlaquette(const std::array<Series<Field>, 4> &U)
 	for (int i = 0; i < N; ++i)
 		s.append(0.0);
 
-	// FIXME: not optimal
-	for (int a = 0; a < N; ++a)
-		for (int b = 0; b < N - a; ++b)
-			for (int c = 0; c < N - a - b; ++c)
-				for (int d = 0; d < N - a - b - c; ++d)
-					for (int mu = 0; mu < 4; ++mu)
-						for (int nu = mu + 1; nu < 4; ++nu)
-							s[a + b + c + d] +=
-							    sum(trace(U[mu][a] * Cshift(U[nu][b], mu, 1) *
-							              Cshift(adj(U[mu][c]), nu, 1) *
-							              adj(U[nu][d])))()()()
-							        .real();
+	for (int mu = 0; mu < 4; ++mu)
+		for (int nu = mu + 1; nu < 4; ++nu)
+		{
+			// TODO: avoid some temp copies
+			Series<Field> tmp = U[mu] * Cshift(U[nu], mu, 1) *
+			                    Cshift(adj(U[mu]), nu, 1) * adj(U[nu]);
+			for (int i = 0; i < N; ++i)
+				s[i] += sum(trace(tmp[i]))()()().real();
+		}
 
 	return s * (1.0 / 3.0 / 6.0 / U[0][0]._grid->gSites());
 }
