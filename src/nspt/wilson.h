@@ -44,24 +44,6 @@ Series<double> avgPlaquette(const std::array<Series<Field>, 4> &U)
 	return s * (1.0 / 3.0 / 6.0 / U[0][0]._grid->gSites());
 }
 
-/** derivative of Wilson action (at beta = 1) */
-template <typename Field>
-void wilsonDeriv(Field &P, const std::array<Field, 4> &U, int mu)
-{
-	P = 0.0;
-	for (int nu = 0; nu < 4; ++nu)
-	{
-		if (nu == mu)
-			continue;
-		P += U[mu] * Cshift(U[nu], mu, 1) * Cshift(adj(U[mu]), nu, 1) *
-		     adj(U[nu]);
-		P += U[mu] * Cshift(Cshift(adj(U[nu]), mu, 1), nu, -1) *
-		     Cshift(adj(U[mu]), nu, -1) * Cshift(U[nu], nu, -1);
-	}
-
-	P = Ta(P) * (1.0 / 3.0 / 2.0);
-}
-
 /** sum of 6 staples */
 template <typename Field>
 void stapleSum(Field &S, const std::array<Field, 4> &U, int mu)
@@ -72,9 +54,17 @@ void stapleSum(Field &S, const std::array<Field, 4> &U, int mu)
 		if (mu == nu)
 			continue;
 		S += Cshift(U[nu], mu, 1) * Cshift(adj(U[mu]), nu, 1) * adj(U[nu]);
-		S += Cshift(Cshift(adj(U[nu]), mu, 1), nu, -1) *
-		     Cshift(adj(U[mu]), nu, -1) * Cshift(U[nu], nu, -1);
+		S += Cshift(Cshift(adj(U[nu]), mu, 1) * adj(U[mu]) * U[nu], nu, -1);
 	}
+}
+
+/** derivative of Wilson action (at beta = 1) */
+template <typename Field>
+void wilsonDeriv(Field &P, const std::array<Field, 4> &U, int mu)
+{
+	stapleSum(P, U, mu);
+	P = Ta(U[mu] * P);
+	P *= 1.0 / 3.0 / 2.0;
 }
 
 #endif
