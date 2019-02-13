@@ -1,6 +1,7 @@
 #include "Grid/Grid.h"
 
 #include "util/gnuplot.h"
+#include "util/stopwatch.h"
 #include <fmt/format.h>
 
 using namespace std;
@@ -92,11 +93,14 @@ int main(int argc, char **argv)
 	auto lang = Langevin(GridDefaultLatt(), degree);
 	std::vector<double> xs;
 	std::vector<std::vector<double>> ys(degree);
+	Stopwatch swEvolve, swMeasure;
 
 	// evolve it some time
 	for (double t = 0.0; t < maxT; t += eps)
 	{
+		swMeasure.start();
 		Series<double> p = avgPlaquette(lang.U);
+		swMeasure.stop();
 
 		fmt::print("t = {}", t);
 		xs.push_back(t);
@@ -107,8 +111,13 @@ int main(int argc, char **argv)
 		}
 		fmt::print("\n");
 
+		swEvolve.start();
 		lang.evolveStep(eps);
+		swEvolve.stop();
 	}
+
+	fmt::print("time for Langevin evolution: {}\n", swEvolve.secs());
+	fmt::print("time for measurments: {}\n", swMeasure.secs());
 
 	auto plot = Gnuplot();
 	plot.style = "lines";
