@@ -49,12 +49,12 @@ template <typename T> class Series
 	}
 
 	/* *this += x^n * b */
-	void add_assign(const Series<T> &b, int n)
+	void add_assign(const Series<T> &b, int n, double alpha)
 	{
 		assert(n >= 0);
 		truncate(std::min(size(), b.size() + n));
 		for (int i = n; i < size(); ++i)
-			a[i] += b[i - n];
+			a[i] += alpha * b[i - n];
 	}
 };
 
@@ -117,21 +117,26 @@ template <typename T> void operator-=(Series<T> &a, const Series<T> &b)
 		a[i] -= b[i];
 }
 
-/** assumes a[0] == 0 !!! */
-template <typename T> Series<T> exp(const Series<T> &a)
+/** only implemented for a[0] == 0 */
+template <typename T> Series<T> exp(const Series<T> &a_)
 {
-	assert(a.size() >= 1);
-	assert(norm2(a[0]) < 1.0e-10);
+	assert(a_.size() >= 1);
+	assert(norm2(a_[0]) < 1.0e-10);
 
+	Series<T> a;
+	for (int i = 1; i < a_.size(); ++i)
+		a.append(a_[i]);
 	Series<T> an = a;
-	Series<T> r = an;
-	r[0] = 1;
+	Series<T> r = a_;
+	r[0] = 1.0;
 
-	for (int i = 2; i < a.size(); ++i)
+	double f = 1.0;
+	for (int i = 2; i < a_.size(); ++i)
 	{
+		a.truncate(a.size() - 1);
 		an = an * a;
-		an *= 1.0 / i;
-		r += an;
+		f *= 1.0 / i;
+		r.add_assign(an, i, f);
 	}
 	return r;
 }
