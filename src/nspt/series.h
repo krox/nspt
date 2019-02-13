@@ -117,6 +117,8 @@ template <typename T> void operator-=(Series<T> &a, const Series<T> &b)
 		a[i] -= b[i];
 }
 
+inline double norm2(double x) { return x * x; }
+
 /** only implemented for a[0] == 0 */
 template <typename T> Series<T> exp(const Series<T> &a_)
 {
@@ -137,6 +139,28 @@ template <typename T> Series<T> exp(const Series<T> &a_)
 		an = an * a;
 		f *= 1.0 / i;
 		r.add_assign(an, i, f);
+	}
+	return r;
+}
+
+/** only implemented for a[0] == 1 */
+template <typename T> Series<T> log(const Series<T> &a_)
+{
+	assert(a_.size() >= 1);
+	assert(norm2(T(a_[0] - 1.0)) < 1.0e-10);
+
+	Series<T> a;
+	for (int i = 1; i < a_.size(); ++i)
+		a.append(a_[i]);
+	Series<T> an = a;
+	Series<T> r = a_;
+	r[0] = 0.0;
+
+	for (int i = 2; i < a_.size(); ++i)
+	{
+		a.truncate(a.size() - 1);
+		an = an * a;
+		r.add_assign(an, i, i % 2 ? 1.0 / i : -1.0 / i);
 	}
 	return r;
 }

@@ -60,8 +60,11 @@ class Langevin
 				force[mu].append(grid);
 
 		// build force term: F = -eps*D(S) + sqrt(eps) * beta^-1/2 * eta
+
 		for (int mu = 0; mu < 4; ++mu)
 		{
+			// NOTE: this seems to be the performance bottleneck. Not the
+			//       "exp(F)" below
 			wilsonDeriv(force[mu], U, mu);
 			force[mu] *= -eps;
 
@@ -78,6 +81,26 @@ class Langevin
 
 		// TODO: check/project unitarity (order by order)
 	}
+
+	void landauStep(double eps)
+	{
+
+		Field R;
+		for (int i = 0; i < degree; ++i)
+			R.append(grid);
+		R = 0.0;
+		for (int mu = 0; mu < 4; ++mu)
+		{
+			Field Amu = log(U[mu]);
+			R += Amu;
+			R -= Cshift(Amu, mu, -1); // NOTE: adj(A) = -A
+		}
+
+		R = exp(R * (-0.5 * eps));
+
+		for (int mu = 0; mu < 4; ++mu)
+			U[mu] = R * U[mu] * Cshift(adj(R), mu, 1);
+	}
 };
 
 int main(int argc, char **argv)
@@ -86,14 +109,14 @@ int main(int argc, char **argv)
 
 	// parameters
 	int degree = 5;
-	double maxT = 10;
+	double maxT = 20;
 	double eps = 0.05;
 
 	// data
 	auto lang = Langevin(GridDefaultLatt(), degree);
 	std::vector<double> xs;
 	std::vector<std::vector<double>> ys(degree);
-	Stopwatch swEvolve, swMeasure;
+	Stopwatch swEvolve, swMeasure, swLandau;
 
 	// evolve it some time
 	for (double t = 0.0; t < maxT; t += eps)
@@ -114,9 +137,16 @@ int main(int argc, char **argv)
 		swEvolve.start();
 		lang.evolveStep(eps);
 		swEvolve.stop();
+
+		// NOTE: the precise amount of gauge-fixing is somewhat arbitrary, but
+		//       scaling it similar to the action term seems reasonable
+		swLandau.start();
+		lang.landauStep(eps);
+		swLandau.stop();
 	}
 
 	fmt::print("time for Langevin evolution: {}\n", swEvolve.secs());
+	fmt::print("time for Landau gaugefix: {}\n", swLandau.secs());
 	fmt::print("time for measurments: {}\n", swMeasure.secs());
 
 	auto plot = Gnuplot();
