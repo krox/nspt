@@ -20,9 +20,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=native -Wall -Wextra -Wno-unused-variable -Wno-register -Werror -fopenmp")
 
+file(GLOB utils "src/util/*.cpp")
+
 set(binaries "su3_sweep" "su3_langevin" "su3_nspt")
 foreach(bin ${binaries})
-	add_executable(${bin} src/${bin}.cpp)
-	target_link_libraries(${bin} util fmt Grid numa z crypto lime fftw3f fftw3 mpfr gmp stdc++ m z numa)
+	add_executable(${bin} src/${bin}.cpp ${utils})
+	target_link_libraries(${bin} fmt Grid numa z crypto lime fftw3f fftw3 mpfr gmp stdc++ m z numa)
 
 endforeach()

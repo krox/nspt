@@ -1,6 +1,8 @@
 #ifndef NSPT_WILSON_H
 #define NSPT_WILSON_H
 
+#include "nspt/series.h"
+
 /**
  * Similar functionality to Grid/qcd/utils/WilsonLoops.h and
  * Grid/qcd/action/gauge/WilsonGaugeAction.h, but:
