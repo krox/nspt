@@ -12,11 +12,13 @@ using namespace util;
 #include "nspt/series.h"
 #include "nspt/wilson.h"
 
+#include "util/CLI11.hpp"
+
 /** Perturbative Langevin evolution for (quenched) SU(3) lattice theory */
 class Langevin
 {
   public:
-	int degree;
+	int order;
 	GridCartesian *grid;
 	GridRedBlackCartesian *rbGrid;
 	GridParallelRNG pRNG;
@@ -28,13 +30,13 @@ class Langevin
 	// gauge config
 	std::array<Field, 4> U;
 
-	Langevin(std::vector<int> latt, int degree)
-	    : degree(degree),
+	Langevin(std::vector<int> latt, int order)
+	    : order(order),
 	      grid(SpaceTimeGrid::makeFourDimGrid(
 	          latt, GridDefaultSimd(Nd, vComplex::Nsimd()), GridDefaultMpi())),
 	      rbGrid(SpaceTimeGrid::makeFourDimRedBlackGrid(grid)), pRNG(grid)
 	{
-		for (int i = 0; i < degree; ++i)
+		for (int i = 0; i < order; ++i)
 			for (int mu = 0; mu < 4; ++mu)
 			{
 				U[mu].append(grid);
@@ -55,7 +57,7 @@ class Langevin
 	void evolveStep(double eps)
 	{
 		std::array<Field, 4> force;
-		for (int i = 0; i < degree; ++i)
+		for (int i = 0; i < order; ++i)
 			for (int mu = 0; mu < 4; ++mu)
 				force[mu].append(grid);
 
@@ -86,7 +88,7 @@ class Langevin
 	{
 
 		Field R;
-		for (int i = 0; i < degree; ++i)
+		for (int i = 0; i < order; ++i)
 			R.append(grid);
 		R = 0.0;
 		for (int mu = 0; mu < 4; ++mu)
@@ -105,21 +107,37 @@ class Langevin
 
 int main(int argc, char **argv)
 {
+	// parameters
+	int order = 5;
+	double maxt = 20;
+	double eps = 0.05;
+	int gaugefix = 1;
+	bool doPlot = false;
+	std::string dummy; // ignore options that go directly to grid
+	CLI::App app{"NSPT for SU(3) lattice gauge theory"};
+	app.add_option("--grid", dummy, "lattice size (e.g. '8.8.8.8')");
+	app.add_option("--order", order, "number of terms in perturbation series");
+	app.add_option("--maxt", maxt, "Langevin time to integrate");
+	app.add_option("--eps", eps, "stepsize for integration");
+	app.add_option("--gaugefix", gaugefix, "do stochastic gauge fixing");
+	app.add_option("--threads", dummy);
+	app.add_flag("--plot", doPlot, "show a plot (requires Gnuplot)");
+	CLI11_PARSE(app, argc, argv);
+
 	Grid_init(&argc, &argv);
 
-	// parameters
-	int degree = 5;
-	double maxT = 20;
-	double eps = 0.05;
-
 	// data
-	auto lang = Langevin(GridDefaultLatt(), degree);
+	auto lang = Langevin(GridDefaultLatt(), order);
+
+	// plotting
 	std::vector<double> xs;
-	std::vector<std::vector<double>> ys(degree);
+	std::vector<std::vector<double>> ys(order);
+
+	// performance measure
 	Stopwatch swEvolve, swMeasure, swLandau;
 
 	// evolve it some time
-	for (double t = 0.0; t < maxT; t += eps)
+	for (double t = 0.0; t < maxt; t += eps)
 	{
 		swMeasure.start();
 		Series<double> p = avgPlaquette(lang.U);
@@ -127,7 +145,7 @@ int main(int argc, char **argv)
 
 		fmt::print("t = {}", t);
 		xs.push_back(t);
-		for (int i = 0; i < degree; ++i)
+		for (int i = 0; i < order; ++i)
 		{
 			ys[i].push_back(p[i]);
 			fmt::print(", {}", p[i]);
@@ -140,26 +158,32 @@ int main(int argc, char **argv)
 
 		// NOTE: the precise amount of gauge-fixing is somewhat arbitrary, but
 		//       scaling it similar to the action term seems reasonable
-		swLandau.start();
-		lang.landauStep(eps);
-		swLandau.stop();
+		if (gaugefix)
+		{
+			swLandau.start();
+			lang.landauStep(eps);
+			swLandau.stop();
+		}
 	}
 
 	fmt::print("time for Langevin evolution: {}\n", swEvolve.secs());
 	fmt::print("time for Landau gaugefix: {}\n", swLandau.secs());
 	fmt::print("time for measurments: {}\n", swMeasure.secs());
 
-	auto plot = Gnuplot();
-	plot.style = "lines";
-	for (int i = 0; i < degree; ++i)
+	if (doPlot)
 	{
-		plot.plotData(xs, ys[i], fmt::format("beta**{}", -0.5 * i));
-		double avg = mean(
-		    span<const double>(ys[i]).subspan(ys[i].size() / 2, ys[i].size()));
-		plot.hline(avg);
-	}
+		auto plot = Gnuplot();
+		plot.style = "lines";
+		for (int i = 0; i < order; ++i)
+		{
+			plot.plotData(xs, ys[i], fmt::format("beta**{}", -0.5 * i));
+			double avg = mean(span<const double>(ys[i]).subspan(
+			    ys[i].size() / 2, ys[i].size()));
+			plot.hline(avg);
+		}
 
-	plot.savefig("nstp.pdf");
+		plot.savefig("nstp.pdf");
+	}
 
 	Grid_finalize();
 }
