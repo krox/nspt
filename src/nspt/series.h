@@ -30,6 +30,10 @@ template <typename T> class Series
 	int size() const { return (int)a.size(); }
 	T &operator[](size_t i) { return a.at(i); }
 	const T &operator[](size_t i) const { return a.at(i); }
+	typename std::vector<T>::iterator begin() { return a.begin(); }
+	typename std::vector<T>::iterator end() { return a.end(); }
+	typename std::vector<T>::const_iterator begin() const { return a.begin(); }
+	typename std::vector<T>::const_iterator end() const { return a.end(); }
 
 	/** set constant term to val, rest to zero */
 	void operator=(double val)

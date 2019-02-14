@@ -4,7 +4,6 @@
 #include "util/stopwatch.h"
 #include <fmt/format.h>
 
-using namespace std;
 using namespace Grid;
 using namespace Grid::QCD;
 using namespace util;
@@ -13,6 +12,8 @@ using namespace util;
 #include "nspt/wilson.h"
 
 #include "util/CLI11.hpp"
+#include "util/json.hpp"
+using namespace nlohmann;
 
 /** Perturbative Langevin evolution for (quenched) SU(3) lattice theory */
 class Langevin
@@ -86,7 +87,6 @@ class Langevin
 
 	void landauStep(double eps)
 	{
-
 		Field R;
 		for (int i = 0; i < order; ++i)
 			R.append(grid);
@@ -103,6 +103,15 @@ class Langevin
 		for (int mu = 0; mu < 4; ++mu)
 			U[mu] = R * U[mu] * Cshift(adj(R), mu, 1);
 	}
+
+	/** compute the algebra elements A=log(U) */
+	std::array<Field, 4> algebra()
+	{
+		std::array<Field, 4> A;
+		for (int mu = 0; mu < 4; ++mu)
+			A[mu] = log(U[mu]);
+		return A;
+	}
 };
 
 int main(int argc, char **argv)
@@ -113,6 +122,7 @@ int main(int argc, char **argv)
 	double eps = 0.05;
 	int gaugefix = 1;
 	bool doPlot = false;
+	std::string filename;
 	std::string dummy; // ignore options that go directly to grid
 	CLI::App app{"NSPT for SU(3) lattice gauge theory"};
 	app.add_option("--grid", dummy, "lattice size (e.g. '8.8.8.8')");
@@ -122,16 +132,20 @@ int main(int argc, char **argv)
 	app.add_option("--gaugefix", gaugefix, "do stochastic gauge fixing");
 	app.add_option("--threads", dummy);
 	app.add_flag("--plot", doPlot, "show a plot (requires Gnuplot)");
+	app.add_option("--filename", filename, "output file (json format)");
 	CLI11_PARSE(app, argc, argv);
 
 	Grid_init(&argc, &argv);
+	std::vector<int> geom = GridDefaultLatt();
 
 	// data
-	auto lang = Langevin(GridDefaultLatt(), order);
+	auto lang = Langevin(geom, order);
+	std::vector<double> ts;
+	std::vector<std::vector<double>> plaq, traceA, hermA, normA;
 
 	// plotting
-	std::vector<double> xs;
-	std::vector<std::vector<double>> ys(order);
+	std::vector<std::vector<double>> plotPlaq(order), plotTraceA(order),
+	    plotHermA(order), plotNormA(order);
 
 	// performance measure
 	Stopwatch swEvolve, swMeasure, swLandau;
@@ -139,23 +153,12 @@ int main(int argc, char **argv)
 	// evolve it some time
 	for (double t = 0.0; t < maxt; t += eps)
 	{
-		swMeasure.start();
-		Series<double> p = avgPlaquette(lang.U);
-		swMeasure.stop();
-
-		fmt::print("t = {}", t);
-		xs.push_back(t);
-		for (int i = 0; i < order; ++i)
-		{
-			ys[i].push_back(p[i]);
-			fmt::print(", {}", p[i]);
-		}
-		fmt::print("\n");
-
+		// step 2: langevin evolution
 		swEvolve.start();
 		lang.evolveStep(eps);
 		swEvolve.stop();
 
+		// step 3: gaugefix
 		// NOTE: the precise amount of gauge-fixing is somewhat arbitrary, but
 		//       scaling it similar to the action term seems reasonable
 		if (gaugefix)
@@ -164,6 +167,69 @@ int main(int argc, char **argv)
 			lang.landauStep(eps);
 			swLandau.stop();
 		}
+
+		// step 1: measurements
+		{
+			swMeasure.start();
+			ts.push_back(t + eps);
+
+			// plaquette
+			Series<double> p = avgPlaquette(lang.U);
+			plaq.push_back(std::vector<double>(p.begin(), p.end()));
+
+			// trace/hermiticity/norm of algebra
+			auto alg = lang.algebra();
+			std::vector<double> tA(order, 0.0);
+			std::vector<double> hA(order, 0.0);
+			std::vector<double> nA(order, 0.0);
+			double V = alg[0][0]._grid->gSites();
+			for (int i = 0; i < order; ++i)
+				for (int mu = 0; mu < 4; ++mu)
+				{
+					tA[i] += norm2(trace(alg[mu][i])) / V;
+					hA[i] += norm2(LatticeColourMatrix(alg[mu][i] +
+					                                   adj(alg[mu][i]))) /
+					         V;
+					nA[i] += norm2(alg[mu][i]) / V;
+				}
+			traceA.push_back(tA);
+			hermA.push_back(hA);
+			normA.push_back(nA);
+
+			fmt::print("t = {}, plaq = ", t);
+			for (int i = 0; i < order; ++i)
+			{
+				plotPlaq[i].push_back(p[i]);
+				plotTraceA[i].push_back(tA[i]);
+				plotHermA[i].push_back(hA[i]);
+				plotNormA[i].push_back(nA[i]);
+				fmt::print(", {}", p[i]);
+			}
+			fmt::print("\n");
+
+			swMeasure.stop();
+		}
+	}
+
+	if (filename != "")
+	{
+		json jsonParams;
+		jsonParams["order"] = order;
+		jsonParams["geom"] = geom;
+		jsonParams["maxt"] = maxt;
+		jsonParams["eps"] = eps;
+		jsonParams["gaugefix"] = gaugefix;
+		jsonParams["improvement"] = 0;
+		jsonParams["zmreg"] = 0;
+
+		json jsonOut;
+		jsonOut["params"] = jsonParams;
+		jsonOut["ts"] = ts;
+		jsonOut["plaq"] = plaq;
+		jsonOut["traceA"] = traceA;
+		jsonOut["hermA"] = hermA;
+		jsonOut["normA"] = normA;
+		std::ofstream(filename) << jsonOut.dump(2) << std::endl;
 	}
 
 	fmt::print("time for Langevin evolution: {}\n", swEvolve.secs());
@@ -172,17 +238,35 @@ int main(int argc, char **argv)
 
 	if (doPlot)
 	{
-		auto plot = Gnuplot();
-		plot.style = "lines";
+		auto plotP = Gnuplot();
+		auto plotTA = Gnuplot();
+		auto plotHA = Gnuplot();
+		auto plotNA = Gnuplot();
+		plotP.style = "lines";
+		plotTA.style = "lines";
+		plotHA.style = "lines";
+		plotNA.style = "lines";
+		plotTA.setLogScaleY();
+		plotHA.setLogScaleY();
 		for (int i = 0; i < order; ++i)
 		{
-			plot.plotData(xs, ys[i], fmt::format("beta**{}", -0.5 * i));
-			double avg = mean(span<const double>(ys[i]).subspan(
-			    ys[i].size() / 2, ys[i].size()));
-			plot.hline(avg);
-		}
+			plotP.plotData(ts, plotPlaq[i],
+			               fmt::format("plaq, b**{}", -0.5 * i));
+			double avg =
+			    mean(span<const double>(plotPlaq[i])
+			             .subspan(plotPlaq[i].size() / 2, plotPlaq[i].size()));
+			plotP.hline(avg);
 
-		plot.savefig("nstp.pdf");
+			if (i > 0)
+				plotTA.plotData(ts, plotTraceA[i],
+				                fmt::format("trace(A) b**{}", -0.5 * i));
+			if (i > 1)
+				plotHA.plotData(ts, plotHermA[i],
+				                fmt::format("herm(A) b**{}", -0.5 * i));
+
+			plotNA.plotData(ts, plotNormA[i],
+			                fmt::format("norm(A) b**{}", -0.5 * i));
+		}
 	}
 
 	Grid_finalize();
