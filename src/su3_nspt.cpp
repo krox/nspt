@@ -112,6 +112,30 @@ class Langevin
 			A[mu] = log(U[mu]);
 		return A;
 	}
+
+	void zmreg(bool reunit)
+	{
+		Field A;
+		for (int mu = 0; mu < 4; ++mu)
+		{
+			A = log(U[mu]);
+			for (int i = 0; i < order; ++i)
+			{
+				ColourMatrix avg = sum(A[i]) * (1.0 / A[i]._grid->gSites());
+
+				// A[i] = A[i] - avg; // This doesn't compile (FIXME)
+				std::vector<ColourMatrix> tmp;
+				unvectorizeToLexOrdArray(tmp, A[i]);
+				for (auto &x : tmp)
+					x -= avg;
+				vectorizeFromLexOrdArray(tmp, A[i]);
+
+				if (reunit)
+					A[i] = Ta(A[i]);
+			}
+			U[mu] = exp(A);
+		}
+	}
 };
 
 int main(int argc, char **argv)
@@ -121,6 +145,7 @@ int main(int argc, char **argv)
 	double maxt = 20;
 	double eps = 0.05;
 	int gaugefix = 1;
+	int zmreg = 2;
 	bool doPlot = false;
 	std::string filename;
 	std::string dummy; // ignore options that go directly to grid
@@ -130,6 +155,7 @@ int main(int argc, char **argv)
 	app.add_option("--maxt", maxt, "Langevin time to integrate");
 	app.add_option("--eps", eps, "stepsize for integration");
 	app.add_option("--gaugefix", gaugefix, "do stochastic gauge fixing");
+	app.add_option("--zmreg", zmreg, "explicitly remove zero modes");
 	app.add_option("--threads", dummy);
 	app.add_flag("--plot", doPlot, "show a plot (requires Gnuplot)");
 	app.add_option("--filename", filename, "output file (json format)");
@@ -148,17 +174,17 @@ int main(int argc, char **argv)
 	    plotHermA(order), plotNormA(order);
 
 	// performance measure
-	Stopwatch swEvolve, swMeasure, swLandau;
+	Stopwatch swEvolve, swMeasure, swLandau, swZmreg;
 
 	// evolve it some time
 	for (double t = 0.0; t < maxt; t += eps)
 	{
-		// step 2: langevin evolution
+		// step 1: langevin evolution
 		swEvolve.start();
 		lang.evolveStep(eps);
 		swEvolve.stop();
 
-		// step 3: gaugefix
+		// step 2: stochastic gauge-fixing and zero-mode regularization
 		// NOTE: the precise amount of gauge-fixing is somewhat arbitrary, but
 		//       scaling it similar to the action term seems reasonable
 		if (gaugefix)
@@ -168,7 +194,14 @@ int main(int argc, char **argv)
 			swLandau.stop();
 		}
 
-		// step 1: measurements
+		if (zmreg)
+		{
+			swZmreg.start();
+			lang.zmreg(zmreg >= 2);
+			swZmreg.stop();
+		}
+
+		// step 3: measurements
 		{
 			swMeasure.start();
 			ts.push_back(t + eps);
@@ -220,7 +253,7 @@ int main(int argc, char **argv)
 		jsonParams["eps"] = eps;
 		jsonParams["gaugefix"] = gaugefix;
 		jsonParams["improvement"] = 0;
-		jsonParams["zmreg"] = 0;
+		jsonParams["zmreg"] = zmreg;
 
 		json jsonOut;
 		jsonOut["params"] = jsonParams;
@@ -234,6 +267,7 @@ int main(int argc, char **argv)
 
 	fmt::print("time for Langevin evolution: {}\n", swEvolve.secs());
 	fmt::print("time for Landau gaugefix: {}\n", swLandau.secs());
+	fmt::print("time for ZM regularization: {}\n", swZmreg.secs());
 	fmt::print("time for measurments: {}\n", swMeasure.secs());
 
 	if (doPlot)
