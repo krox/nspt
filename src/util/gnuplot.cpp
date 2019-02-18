@@ -33,8 +33,8 @@ Gnuplot &Gnuplot::plotFunction(const std::string &fun, const std::string &title)
 Gnuplot &Gnuplot::plotFunction(const std::function<double(double)> &fun,
                                double a, double b, const std::string &title)
 {
-	auto oldStyle = style;
-	style = "lines";
+	auto oldStyle = style_;
+	style_ = "lines";
 	std::vector<double> xs, ys;
 	for (int i = 0; i <= 100; ++i)
 	{
@@ -42,7 +42,7 @@ Gnuplot &Gnuplot::plotFunction(const std::function<double(double)> &fun,
 		ys.push_back(fun(xs.back()));
 	}
 	plotData(xs, ys, title);
-	style = oldStyle;
+	style_ = oldStyle;
 	return *this;
 }
 
@@ -55,7 +55,7 @@ Gnuplot &Gnuplot::plotData(span<const double> ys, const std::string &title)
 	file.flush();
 	file.close();
 	fmt::print(pipe, "{} '{}' using 1:2 with {} title \"{}\"\n",
-	           (nplots ? "replot" : "plot"), filename, style, title);
+	           (nplots ? "replot" : "plot"), filename, style_, title);
 	fflush(pipe);
 	++nplots;
 	return *this;
@@ -88,7 +88,7 @@ Gnuplot &Gnuplot::plotData(span<const double> xs, span<const double> ys,
 	file.flush();
 	file.close();
 	fmt::print(pipe, "{} '{}' using 1:2 with {} title \"{}\"\n",
-	           (nplots ? "replot" : "plot"), filename, style, title);
+	           (nplots ? "replot" : "plot"), filename, style_, title);
 	fflush(pipe);
 	++nplots;
 	return *this;
@@ -106,6 +106,30 @@ Gnuplot &Gnuplot::plotError(span<const double> xs, span<const double> ys,
 	file.close();
 	fmt::print(pipe, "{} '{}' using 1:2:3 with {} title \"{}\"\n",
 	           (nplots ? "replot" : "plot"), filename, "errorbars", title);
+	fflush(pipe);
+	++nplots;
+	return *this;
+}
+
+Gnuplot &Gnuplot::plotData(span<const double> xs, const vector2d<double> &ys,
+                           const std::string &title)
+{
+	std::string filename = fmt::format("gnuplot_{}_{}.txt", plotID, nplots);
+	std::ofstream file(filename);
+	assert(xs.size() == ys.height() && ys.width() >= 1);
+	for (size_t i = 0; i < xs.size(); ++i)
+	{
+		file << xs[i];
+		for (size_t j = 0; j < ys.width(); ++j)
+			file << " " << ys(i, j);
+		file << "\n";
+	}
+	file.flush();
+	file.close();
+	for (size_t j = 0; j < ys.width(); ++j)
+		fmt::print(pipe, "{} '{}' using 1:{} with {} title \"{}[{}]\"\n",
+		           (nplots + j) ? "replot" : "plot", filename, j + 2, style_,
+		           title, j);
 	fflush(pipe);
 	++nplots;
 	return *this;

@@ -5,6 +5,7 @@
 
 #include "util/span.h"
 #include "util/stats.h"
+#include "util/vector2d.h"
 
 namespace util {
 
@@ -14,10 +15,9 @@ class Gnuplot
 	static int nplotsGlobal;
 	int nplots = 0;
 	const int plotID;
+	std::string style_ = "points";
 
   public:
-	std::string style = "points";
-
 	/** constructor */
 	explicit Gnuplot(bool persist = true);
 
@@ -41,12 +41,23 @@ class Gnuplot
 	                   span<const double> err,
 	                   const std::string &title = "data");
 
+	/** plot multiple data lines */
+	Gnuplot &plotData(span<const double> xs, const vector2d<double> &ys,
+	                  const std::string &title = "data");
+
 	/** plot a histogram */
 	Gnuplot &plotHistogram(const Histogram &hist,
 	                       const std::string &title = "hist");
 
 	/** black horizontal line without label */
 	Gnuplot &hline(double y);
+
+	/** set style */
+	Gnuplot &style(const std::string &s)
+	{
+		style_ = s;
+		return *this;
+	}
 
 	/** set range of plot */
 	Gnuplot &setRangeX(double min, double max);

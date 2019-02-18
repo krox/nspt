@@ -1,7 +1,10 @@
 #include "Grid/Grid.h"
 
+#include "util/json.hpp"
+
 #include "util/gnuplot.h"
 #include "util/stopwatch.h"
+#include "util/vector2d.h"
 #include <fmt/format.h>
 
 using namespace Grid;
@@ -12,7 +15,7 @@ using namespace util;
 #include "nspt/wilson.h"
 
 #include "util/CLI11.hpp"
-#include "util/json.hpp"
+
 using namespace nlohmann;
 
 #include <experimental/filesystem>
@@ -175,11 +178,7 @@ int main(int argc, char **argv)
 	// data
 	auto lang = Langevin(geom, order);
 	std::vector<double> ts;
-	std::vector<std::vector<double>> plaq, traceA, hermA, normA;
-
-	// plotting
-	std::vector<std::vector<double>> plotPlaq(order), plotTraceA(order),
-	    plotHermA(order), plotNormA(order);
+	vector2d<double> plaq, traceA, hermA, normA;
 
 	// performance measure
 	Stopwatch swEvolve, swMeasure, swLandau, swZmreg;
@@ -216,7 +215,7 @@ int main(int argc, char **argv)
 
 			// plaquette
 			Series<double> p = avgPlaquette(lang.U);
-			plaq.push_back(std::vector<double>(p.begin(), p.end()));
+			plaq.push_back(p);
 
 			// trace/hermiticity/norm of algebra
 			auto alg = lang.algebra();
@@ -231,6 +230,7 @@ int main(int argc, char **argv)
 					hA[i] += norm2(LatticeColourMatrix(alg[mu][i] +
 					                                   adj(alg[mu][i]))) /
 					         V;
+
 					nA[i] += norm2(alg[mu][i]) / V;
 				}
 			traceA.push_back(tA);
@@ -239,13 +239,7 @@ int main(int argc, char **argv)
 
 			fmt::print("t = {}, plaq = ", t);
 			for (int i = 0; i < order; ++i)
-			{
-				plotPlaq[i].push_back(p[i]);
-				plotTraceA[i].push_back(tA[i]);
-				plotHermA[i].push_back(hA[i]);
-				plotNormA[i].push_back(nA[i]);
 				fmt::print(", {}", p[i]);
-			}
 			fmt::print("\n");
 
 			swMeasure.stop();
@@ -280,35 +274,10 @@ int main(int argc, char **argv)
 
 	if (doPlot)
 	{
-		auto plotP = Gnuplot();
-		auto plotTA = Gnuplot();
-		auto plotHA = Gnuplot();
-		auto plotNA = Gnuplot();
-		plotP.style = "lines";
-		plotTA.style = "lines";
-		plotHA.style = "lines";
-		plotNA.style = "lines";
-		plotTA.setLogScaleY();
-		plotHA.setLogScaleY();
-		for (int i = 0; i < order; ++i)
-		{
-			plotP.plotData(ts, plotPlaq[i],
-			               fmt::format("plaq, b**{}", -0.5 * i));
-			double avg =
-			    mean(span<const double>(plotPlaq[i])
-			             .subspan(plotPlaq[i].size() / 2, plotPlaq[i].size()));
-			plotP.hline(avg);
-
-			if (i > 0)
-				plotTA.plotData(ts, plotTraceA[i],
-				                fmt::format("trace(A) b**{}", -0.5 * i));
-			if (i > 1)
-				plotHA.plotData(ts, plotHermA[i],
-				                fmt::format("herm(A) b**{}", -0.5 * i));
-
-			plotNA.plotData(ts, plotNormA[i],
-			                fmt::format("norm(A) b**{}", -0.5 * i));
-		}
+		Gnuplot().style("lines").plotData(ts, plaq, "plaq");
+		Gnuplot().style("lines").plotData(ts, traceA, "trace(A)");
+		Gnuplot().style("lines").plotData(ts, hermA, "herm(A)");
+		Gnuplot().style("lines").plotData(ts, normA, "norm(A)");
 	}
 
 	Grid_finalize();

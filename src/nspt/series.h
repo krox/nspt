@@ -34,6 +34,8 @@ template <typename T> class Series
 	typename std::vector<T>::iterator end() { return a.end(); }
 	typename std::vector<T>::const_iterator begin() const { return a.begin(); }
 	typename std::vector<T>::const_iterator end() const { return a.end(); }
+	operator span<T>() { return a; }
+	operator span<const T>() const { return a; }
 
 	/** set constant term to val, rest to zero */
 	void operator=(double val)
