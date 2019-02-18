@@ -15,6 +15,8 @@ using namespace util;
 #include "util/json.hpp"
 using namespace nlohmann;
 
+#include <experimental/filesystem>
+
 /** Perturbative Langevin evolution for (quenched) SU(3) lattice theory */
 class Langevin
 {
@@ -160,6 +162,12 @@ int main(int argc, char **argv)
 	app.add_flag("--plot", doPlot, "show a plot (requires Gnuplot)");
 	app.add_option("--filename", filename, "output file (json format)");
 	CLI11_PARSE(app, argc, argv);
+
+	if (filename != "" && std::experimental::filesystem::exists(filename))
+	{
+		fmt::print("{} already exists. skipping.\n", filename);
+		return 0;
+	}
 
 	Grid_init(&argc, &argv);
 	std::vector<int> geom = GridDefaultLatt();

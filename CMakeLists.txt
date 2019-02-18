@@ -25,6 +25,6 @@ file(GLOB utils "src/util/*.cpp")
 set(binaries "su3_sweep" "su3_langevin" "su3_nspt")
 foreach(bin ${binaries})
 	add_executable(${bin} src/${bin}.cpp ${utils})
-	target_link_libraries(${bin} fmt Grid numa z crypto lime fftw3f fftw3 mpfr gmp stdc++ m z numa)
+	target_link_libraries(${bin} fmt stdc++fs Grid numa z crypto lime fftw3f fftw3 mpfr gmp stdc++ m z numa)
 
 endforeach()
