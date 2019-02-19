@@ -26,7 +26,6 @@ class Langevin
   public:
 	int order;
 	GridCartesian *grid;
-	GridRedBlackCartesian *rbGrid;
 	GridParallelRNG pRNG;
 	GridSerialRNG sRNG;
 
@@ -40,7 +39,7 @@ class Langevin
 	    : order(order),
 	      grid(SpaceTimeGrid::makeFourDimGrid(
 	          latt, GridDefaultSimd(Nd, vComplex::Nsimd()), GridDefaultMpi())),
-	      rbGrid(SpaceTimeGrid::makeFourDimRedBlackGrid(grid)), pRNG(grid)
+	      pRNG(grid)
 	{
 		for (int i = 0; i < order; ++i)
 			for (int mu = 0; mu < 4; ++mu)
@@ -103,6 +102,10 @@ class Langevin
 			R -= Cshift(Amu, mu, -1); // NOTE: adj(A) = -A
 		}
 
+		/** NOTE: without this projection, the non-anti-hermitian part of A will
+		 * grow exponentially in time */
+		R = Ta(R);
+
 		R = exp(R * (-0.5 * eps));
 
 		for (int mu = 0; mu < 4; ++mu)
@@ -143,15 +146,110 @@ class Langevin
 	}
 };
 
+class AlgebraObservables
+{
+  public:
+	/** all these observables are computed sepraately at every order */
+
+	// these are zero except for rounding errors (can be corrected by "reunit")
+	vector2d<double> traceA; // avg_µx |Tr(A)|^2
+	vector2d<double> hermA;  // avg_µx |A+A^+|^2
+
+	// these drift away from zero as a random walk (can be fixed by "zmreg")
+	vector2d<double> avgAx, avgAy, avgAz, avgAt; // |avg_x A(µ)|^2
+
+	// this is zero in Landau gauge, but drifts away in simulation.
+	// can be kept moderate by "gaugefix" (no exact fixing needed)
+	vector2d<double> gaugeCond; // avg_x |∂µ A(µ)|^2
+
+	// no specific behaviour, but unbounded growth is a bad sign
+	vector2d<double> normA; // avg_µx |A|^2
+
+	void measure(const std::array<Langevin::Field, 4> &A)
+	{
+		int order = A[0].size();
+		double V = A[0][0]._grid->gSites();
+
+		{
+			std::vector<double> tmp1(order, 0);
+			std::vector<double> tmp2(order, 0);
+			std::vector<double> tmp3(order, 0);
+			for (int i = 0; i < order; ++i)
+				for (int mu = 0; mu < 4; ++mu)
+				{
+					tmp1[i] += (1.0 / V) * norm2(trace(A[mu][i]));
+					tmp2[i] +=
+					    (1.0 / V) *
+					    norm2(LatticeColourMatrix(A[mu][i] + adj(A[mu][i])));
+					tmp3[i] += norm2(A[mu][i]) * (1.0 / V);
+				}
+			traceA.push_back(tmp1);
+			hermA.push_back(tmp2);
+			normA.push_back(tmp3);
+		}
+
+		{
+			std::vector<double> tmp1(order, 0);
+			std::vector<double> tmp2(order, 0);
+			std::vector<double> tmp3(order, 0);
+			std::vector<double> tmp4(order, 0);
+			for (int i = 0; i < order; ++i)
+			{
+				tmp1[i] = norm2((1.0 / V) * sum(A[0][i]));
+				tmp2[i] = norm2((1.0 / V) * sum(A[1][i]));
+				tmp3[i] = norm2((1.0 / V) * sum(A[2][i]));
+				tmp4[i] = norm2((1.0 / V) * sum(A[3][i]));
+			}
+			avgAx.push_back(tmp1);
+			avgAy.push_back(tmp2);
+			avgAz.push_back(tmp3);
+			avgAt.push_back(tmp4);
+		}
+
+		{
+			std::vector<double> tmp1(order, 0);
+
+			for (int i = 0; i < order; ++i)
+			{
+				LatticeColourMatrix w = A[0][i] - Cshift(A[0][i], 0, -1);
+				w += A[1][i] - Cshift(A[1][i], 1, -1);
+				w += A[2][i] - Cshift(A[2][i], 2, -1);
+				w += A[3][i] - Cshift(A[3][i], 3, -1);
+				tmp1[i] += (1.0 / V) * norm2(w);
+			}
+			gaugeCond.push_back(tmp1);
+		}
+	}
+
+	void plot(const std::vector<double> &ts)
+	{
+		auto plt = [] { return Gnuplot().style("lines").setLogScaleY(); };
+
+		plt().plotData(ts, traceA, "avg |Tr(A)|^2");
+		plt().plotData(ts, hermA, "avg |A+A^+|^2");
+		plt().plotData(ts, normA, "avg |A|^2");
+		plt().plotData(ts, gaugeCond, "avg |∂µ A(µ)|^2");
+		plt().plotData(ts, avgAx, "|avg A(x)|^2");
+		plt().plotData(ts, avgAy, "|avg A(y)|^2");
+		plt().plotData(ts, avgAz, "|avg A(z)|^2");
+		plt().plotData(ts, avgAt, "|avg A(t)|^2");
+	}
+};
+
 int main(int argc, char **argv)
 {
 	// parameters
 	int order = 5;
 	double maxt = 20;
 	double eps = 0.05;
+
+	int improvement = 1;
 	int gaugefix = 1;
-	int zmreg = 2;
-	bool doPlot = false;
+	int zmreg = 1;
+	int reunit = 1;
+
+	int doPlot = 0;
+
 	std::string filename;
 	std::string dummy; // ignore options that go directly to grid
 	CLI::App app{"NSPT for SU(3) lattice gauge theory"};
@@ -159,10 +257,12 @@ int main(int argc, char **argv)
 	app.add_option("--order", order, "number of terms in perturbation series");
 	app.add_option("--maxt", maxt, "Langevin time to integrate");
 	app.add_option("--eps", eps, "stepsize for integration");
+	app.add_option("--improvement", improvement, "use improved integrator");
 	app.add_option("--gaugefix", gaugefix, "do stochastic gauge fixing");
 	app.add_option("--zmreg", zmreg, "explicitly remove zero modes");
+	app.add_option("--reunit", reunit, "explicitly project onto group/algebra");
 	app.add_option("--threads", dummy);
-	app.add_flag("--plot", doPlot, "show a plot (requires Gnuplot)");
+	app.add_option("--plot", doPlot, "show a plot (requires Gnuplot)");
 	app.add_option("--filename", filename, "output file (json format)");
 	CLI11_PARSE(app, argc, argv);
 
@@ -178,7 +278,8 @@ int main(int argc, char **argv)
 	// data
 	auto lang = Langevin(geom, order);
 	std::vector<double> ts;
-	vector2d<double> plaq, traceA, hermA, normA;
+	vector2d<double> plaq;
+	AlgebraObservables algObs;
 
 	// performance measure
 	Stopwatch swEvolve, swMeasure, swLandau, swZmreg;
@@ -188,7 +289,10 @@ int main(int argc, char **argv)
 	{
 		// step 1: langevin evolution
 		swEvolve.start();
-		lang.evolveStep(eps);
+		if (improvement == 0)
+			lang.evolveStep(eps);
+		else
+			assert(false);
 		swEvolve.stop();
 
 		// step 2: stochastic gauge-fixing and zero-mode regularization
@@ -204,7 +308,7 @@ int main(int argc, char **argv)
 		if (zmreg)
 		{
 			swZmreg.start();
-			lang.zmreg(zmreg >= 2);
+			lang.zmreg(reunit);
 			swZmreg.stop();
 		}
 
@@ -217,30 +321,13 @@ int main(int argc, char **argv)
 			Series<double> p = avgPlaquette(lang.U);
 			plaq.push_back(p);
 
-			// trace/hermiticity/norm of algebra
-			auto alg = lang.algebra();
-			std::vector<double> tA(order, 0.0);
-			std::vector<double> hA(order, 0.0);
-			std::vector<double> nA(order, 0.0);
-			double V = alg[0][0]._grid->gSites();
-			for (int i = 0; i < order; ++i)
-				for (int mu = 0; mu < 4; ++mu)
-				{
-					tA[i] += norm2(trace(alg[mu][i])) / V;
-					hA[i] += norm2(LatticeColourMatrix(alg[mu][i] +
-					                                   adj(alg[mu][i]))) /
-					         V;
-
-					nA[i] += norm2(alg[mu][i]) / V;
-				}
-			traceA.push_back(tA);
-			hermA.push_back(hA);
-			normA.push_back(nA);
-
 			fmt::print("t = {}, plaq = ", t);
 			for (int i = 0; i < order; ++i)
 				fmt::print(", {}", p[i]);
 			fmt::print("\n");
+
+			// trace/hermiticity/etc of algebra
+			algObs.measure(lang.algebra());
 
 			swMeasure.stop();
 		}
@@ -253,17 +340,23 @@ int main(int argc, char **argv)
 		jsonParams["geom"] = geom;
 		jsonParams["maxt"] = maxt;
 		jsonParams["eps"] = eps;
-		jsonParams["gaugefix"] = gaugefix;
 		jsonParams["improvement"] = 0;
+		jsonParams["gaugefix"] = gaugefix;
 		jsonParams["zmreg"] = zmreg;
+		jsonParams["reunit"] = reunit;
 
 		json jsonOut;
 		jsonOut["params"] = jsonParams;
 		jsonOut["ts"] = ts;
 		jsonOut["plaq"] = plaq;
-		jsonOut["traceA"] = traceA;
-		jsonOut["hermA"] = hermA;
-		jsonOut["normA"] = normA;
+		jsonOut["traceA"] = algObs.traceA;
+		jsonOut["hermA"] = algObs.hermA;
+		jsonOut["normA"] = algObs.normA;
+		jsonOut["gaugeCond"] = algObs.gaugeCond;
+		jsonOut["avgAx"] = algObs.avgAx;
+		jsonOut["avgAy"] = algObs.avgAy;
+		jsonOut["avgAz"] = algObs.avgAz;
+		jsonOut["avgAt"] = algObs.avgAt;
 		std::ofstream(filename) << jsonOut.dump(2) << std::endl;
 	}
 
@@ -272,13 +365,10 @@ int main(int argc, char **argv)
 	fmt::print("time for ZM regularization: {}\n", swZmreg.secs());
 	fmt::print("time for measurments: {}\n", swMeasure.secs());
 
-	if (doPlot)
-	{
+	if (doPlot >= 1)
 		Gnuplot().style("lines").plotData(ts, plaq, "plaq");
-		Gnuplot().style("lines").plotData(ts, traceA, "trace(A)");
-		Gnuplot().style("lines").plotData(ts, hermA, "herm(A)");
-		Gnuplot().style("lines").plotData(ts, normA, "norm(A)");
-	}
+	if (doPlot >= 2)
+		algObs.plot(ts);
 
 	Grid_finalize();
 }
