@@ -126,10 +126,20 @@ Gnuplot &Gnuplot::plotData(span<const double> xs, const vector2d<double> &ys,
 	}
 	file.flush();
 	file.close();
+	int skips = 0;
 	for (size_t j = 0; j < ys.width(); ++j)
+	{
+		if (logy_ && !(ys(ys.height() / 2, j) > 0))
+		{
+			++skips;
+			continue;
+		}
 		fmt::print(pipe, "{} '{}' using 1:{} with {} title \"{}[{}]\"\n",
-		           (nplots + j) ? "replot" : "plot", filename, j + 2, style_,
-		           title, j);
+		           (nplots + j - skips) ? "replot" : "plot", filename, j + 2,
+		           style_, title, j);
+	}
+	fmt::print("Warning: skipped {} plots due to negative values on log\n",
+	           skips);
 	fflush(pipe);
 	++nplots;
 	return *this;
@@ -184,6 +194,7 @@ Gnuplot &Gnuplot::setRangeZ(double min, double max)
 Gnuplot &Gnuplot::setLogScaleX()
 {
 	fmt::print(pipe, "set logscale x\n");
+	logx_ = true;
 	fflush(pipe);
 	return *this;
 }
@@ -191,6 +202,7 @@ Gnuplot &Gnuplot::setLogScaleX()
 Gnuplot &Gnuplot::setLogScaleY()
 {
 	fmt::print(pipe, "set logscale y\n");
+	logy_ = true;
 	fflush(pipe);
 	return *this;
 }
@@ -198,6 +210,7 @@ Gnuplot &Gnuplot::setLogScaleY()
 Gnuplot &Gnuplot::setLogScaleZ()
 {
 	fmt::print(pipe, "set logscale z\n");
+	logz_ = true;
 	fflush(pipe);
 	return *this;
 }

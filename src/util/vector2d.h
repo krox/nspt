@@ -2,6 +2,7 @@
 #define UTIL_VECTOR2data_H
 
 #include "util/span.h"
+#include <cassert>
 
 namespace util {
 template <typename T> class vector2d

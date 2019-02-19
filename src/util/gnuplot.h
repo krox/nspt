@@ -16,6 +16,9 @@ class Gnuplot
 	int nplots = 0;
 	const int plotID;
 	std::string style_ = "points";
+	bool logx_ = false;
+	bool logy_ = false;
+	bool logz_ = false;
 
   public:
 	/** constructor */
