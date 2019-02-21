@@ -35,7 +35,7 @@ class Langevin
 	// gauge config
 	std::array<Field, 4> U;
 
-	Langevin(std::vector<int> latt, int order)
+	Langevin(std::vector<int> latt, int order, int seed)
 	    : order(order),
 	      grid(SpaceTimeGrid::makeFourDimGrid(
 	          latt, GridDefaultSimd(Nd, vComplex::Nsimd()), GridDefaultMpi())),
@@ -47,8 +47,8 @@ class Langevin
 				U[mu].append(grid);
 				U[mu][i] = (i == 0 ? 1.0 : 0.0); // start from unit config
 			}
-		std::vector<int> pseeds({1, 2, 3, 4, 5});
-		std::vector<int> sseeds({6, 7, 8, 9, 10});
+		std::vector<int> pseeds({seed + 0, seed + 1, seed + 2, seed + 3});
+		std::vector<int> sseeds({seed + 4, seed + 5, seed + 6, seed + 7});
 		pRNG.SeedFixedIntegers(pseeds);
 		sRNG.SeedFixedIntegers(sseeds);
 	}
@@ -249,6 +249,7 @@ int main(int argc, char **argv)
 	int reunit = 1;
 
 	int doPlot = 0;
+	int seed = -1;
 
 	std::string filename;
 	std::string dummy; // ignore options that go directly to grid
@@ -264,6 +265,7 @@ int main(int argc, char **argv)
 	app.add_option("--threads", dummy);
 	app.add_option("--plot", doPlot, "show a plot (requires Gnuplot)");
 	app.add_option("--filename", filename, "output file (json format)");
+	app.add_option("--seed", seed, "seed for rng (default = unpredictable)");
 	CLI11_PARSE(app, argc, argv);
 
 	if (filename != "" && std::experimental::filesystem::exists(filename))
@@ -276,7 +278,9 @@ int main(int argc, char **argv)
 	std::vector<int> geom = GridDefaultLatt();
 
 	// data
-	auto lang = Langevin(geom, order);
+	if (seed == -1)
+		seed = std::random_device()();
+	auto lang = Langevin(geom, order, seed);
 	std::vector<double> ts;
 	vector2d<double> plaq;
 	AlgebraObservables algObs;
