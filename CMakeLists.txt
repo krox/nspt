@@ -15,6 +15,8 @@ else()
 	message(STATUS "IPO / LTO not supported: <${error}>")
 endif()
 
+find_package(HDF5 REQUIRED)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -25,6 +27,7 @@ file(GLOB utils "src/util/*.cpp")
 set(binaries "su3_sweep" "su3_langevin" "su3_nspt")
 foreach(bin ${binaries})
 	add_executable(${bin} src/${bin}.cpp ${utils})
-	target_link_libraries(${bin} fmt stdc++fs Grid numa z crypto lime fftw3f fftw3 mpfr gmp stdc++ m z numa)
+	target_include_directories(${bin} PRIVATE ${HDF5_INCLUDE_DIRS})
+	target_link_libraries(${bin} ${HDF5_LIBRARIES} fmt stdc++fs Grid numa z crypto lime fftw3f fftw3 mpfr gmp stdc++ m z numa)
 
 endforeach()

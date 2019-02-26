@@ -16,6 +16,8 @@ using namespace util;
 
 #include "util/CLI11.hpp"
 
+#include "util/hdf5.h"
+
 using namespace nlohmann;
 
 #include <experimental/filesystem>
@@ -274,6 +276,14 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
+	if (filename != "")
+		if (filename.find(".json") == std::string::npos &&
+		    filename.find(".h5") == std::string::npos)
+		{
+			fmt::print("ERROR: unrecognized file ending: {}\n", filename);
+			return -1;
+		}
+
 	Grid_init(&argc, &argv);
 	std::vector<int> geom = GridDefaultLatt();
 
@@ -337,14 +347,14 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (filename != "")
+	if (filename != "" && filename.find(".json") != std::string::npos)
 	{
 		json jsonParams;
 		jsonParams["order"] = order;
 		jsonParams["geom"] = geom;
 		jsonParams["maxt"] = maxt;
 		jsonParams["eps"] = eps;
-		jsonParams["improvement"] = 0;
+		jsonParams["improvement"] = improvement;
 		jsonParams["gaugefix"] = gaugefix;
 		jsonParams["zmreg"] = zmreg;
 		jsonParams["reunit"] = reunit;
@@ -362,6 +372,29 @@ int main(int argc, char **argv)
 		jsonOut["avgAz"] = algObs.avgAz;
 		jsonOut["avgAt"] = algObs.avgAt;
 		std::ofstream(filename) << jsonOut.dump(2) << std::endl;
+	}
+	else if (filename != "" && filename.find(".h5") != std::string::npos)
+	{
+		auto file = DataFile::create(filename);
+		file.setAttribute("order", order);
+		file.setAttribute("geom", geom);
+		file.setAttribute("maxt", maxt);
+		file.setAttribute("eps", eps);
+		file.setAttribute("improvement", improvement);
+		file.setAttribute("gaugefix", gaugefix);
+		file.setAttribute("zmreg", zmreg);
+		file.setAttribute("reunit", reunit);
+
+		file.createData("ts", ts);
+		file.createData("plaq", plaq);
+		file.createData("traceA", algObs.traceA);
+		file.createData("hermA", algObs.hermA);
+		file.createData("normA", algObs.normA);
+		file.createData("gaugeCond", algObs.gaugeCond);
+		file.createData("avgAx", algObs.avgAx);
+		file.createData("avgAy", algObs.avgAy);
+		file.createData("avgAz", algObs.avgAz);
+		file.createData("avgAt", algObs.avgAt);
 	}
 
 	fmt::print("time for Langevin evolution: {}\n", swEvolve.secs());

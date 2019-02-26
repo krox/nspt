@@ -25,6 +25,7 @@ template <typename T> class span
 	span(T *begin, T *end) : data_(begin), size_(end - begin) {}
 	span(std::vector<T> &v) : data_(v.data()), size_(v.size()) {}
 	span(const std::vector<T_mut> &v) : data_(v.data()), size_(v.size()) {}
+	span(span<T_mut> v) : data_(v.data()), size_(v.size()) {}
 
 	/** field access */
 	T *data() { return data_; }
