@@ -91,7 +91,7 @@ class Langevin
 		// TODO: check/project unitarity (order by order)
 	}
 
-	void landauStep(double eps)
+	void landauStep(double alpha)
 	{
 		Field R;
 		for (int i = 0; i < order; ++i)
@@ -108,7 +108,7 @@ class Langevin
 		 * grow exponentially in time */
 		R = Ta(R);
 
-		R = exp(R * (-0.5 * eps));
+		R = exp(R * (-alpha));
 
 		for (int mu = 0; mu < 4; ++mu)
 			U[mu] = R * U[mu] * Cshift(adj(R), mu, 1);
@@ -311,13 +311,12 @@ int main(int argc, char **argv)
 
 		// step 2: stochastic gauge-fixing and zero-mode regularization
 		// NOTE: the precise amount of gauge-fixing is somewhat arbitrary, but
-		//       scaling it similar to the action term seems reasonable
-		if (gaugefix)
-		{
-			swLandau.start();
-			lang.landauStep(eps);
-			swLandau.stop();
-		}
+		//       don't scale it with epsilon.
+
+		swLandau.start();
+		for (int i = 0; i < gaugefix; ++i)
+			lang.landauStep(0.1);
+		swLandau.stop();
 
 		if (zmreg)
 		{
