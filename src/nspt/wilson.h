@@ -38,7 +38,7 @@ Series<double> avgPlaquette(const std::array<Series<Field>, 4> &U)
 			Series<Field> tmp = U[mu] * Cshift(U[nu], mu, 1) *
 			                    Cshift(adj(U[mu]), nu, 1) * adj(U[nu]);
 			for (int i = 0; i < N; ++i)
-				s[i] += sum(trace(tmp[i]))()()().real();
+				s[i] += sum(trace(tmp[i]))()()()().real();
 		}
 
 	return s * (1.0 / 3.0 / 6.0 / U[0][0]._grid->gSites());

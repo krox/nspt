@@ -7,8 +7,11 @@
 #include "util/vector2d.h"
 #include <fmt/format.h>
 
+#include "nspt/pqcd.h"
+
 using namespace Grid;
-using namespace Grid::QCD;
+using Grid::QCD::SpaceTimeGrid;
+using namespace Grid::pQCD;
 using namespace util;
 
 #include "nspt/series.h"
@@ -57,8 +60,9 @@ class Langevin
 
 	void makeNoise(LatticeColourMatrix &out, double eps)
 	{
-		/** NOTE: only precise for abelian groups or small-eps limit */
-		SU3::GaussianFundamentalLieAlgebraMatrix(pRNG, out, eps);
+		gaussian(pRNG, out);
+		out *= eps * std::sqrt(0.5); // normalization of SU(3) generators
+		out = Ta(out);
 	}
 
 	void evolveStep(double eps)
