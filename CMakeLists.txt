@@ -29,5 +29,5 @@ foreach(bin ${binaries})
 	add_executable(${bin} src/${bin}.cpp ${utils})
 	target_include_directories(${bin} PRIVATE ${HDF5_INCLUDE_DIRS})
 	target_link_libraries(${bin} ${HDF5_LIBRARIES} fmt stdc++fs Grid numa z crypto lime fftw3f fftw3 mpfr gmp stdc++ m z numa)
-
+	target_compile_definitions(${bin} PRIVATE NSPT_ORDER=${ORDER})
 endforeach()

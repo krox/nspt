@@ -14,7 +14,6 @@ using Grid::QCD::SpaceTimeGrid;
 using namespace Grid::pQCD;
 using namespace util;
 
-#include "nspt/series.h"
 #include "nspt/wilson.h"
 
 #include "util/CLI11.hpp"
@@ -29,29 +28,25 @@ using namespace nlohmann;
 class Langevin
 {
   public:
-	int order;
 	GridCartesian *grid;
 	GridParallelRNG pRNG;
 	GridSerialRNG sRNG;
 
 	// Fields are expanded in beta^-0.5
-	using Field = Series<LatticeColourMatrix>;
+	using Field = LatticeColourMatrixSeries;
 
 	// gauge config
 	std::array<Field, 4> U;
 
-	Langevin(std::vector<int> latt, int order, int seed)
-	    : order(order),
-	      grid(SpaceTimeGrid::makeFourDimGrid(
+	Langevin(std::vector<int> latt, int seed)
+	    : grid(SpaceTimeGrid::makeFourDimGrid(
 	          latt, GridDefaultSimd(Nd, vComplex::Nsimd()), GridDefaultMpi())),
-	      pRNG(grid)
+	      pRNG(grid), U{Field(grid), Field(grid), Field(grid), Field(grid)}
 	{
-		for (int i = 0; i < order; ++i)
-			for (int mu = 0; mu < 4; ++mu)
-			{
-				U[mu].append(grid);
-				U[mu][i] = (i == 0 ? 1.0 : 0.0); // start from unit config
-			}
+		// start from unit config
+		for (int mu = 0; mu < 4; ++mu)
+			U[mu] = 1.0;
+
 		std::vector<int> pseeds({seed + 0, seed + 1, seed + 2, seed + 3});
 		std::vector<int> sseeds({seed + 4, seed + 5, seed + 6, seed + 7});
 		pRNG.SeedFixedIntegers(pseeds);
@@ -67,10 +62,8 @@ class Langevin
 
 	void evolveStep(double eps)
 	{
-		std::array<Field, 4> force;
-		for (int i = 0; i < order; ++i)
-			for (int mu = 0; mu < 4; ++mu)
-				force[mu].append(grid);
+		std::array<Field, 4> force{Field(grid), Field(grid), Field(grid),
+		                           Field(grid)};
 
 		// build force term: F = -eps*D(S) + sqrt(eps) * beta^-1/2 * eta
 
@@ -83,27 +76,30 @@ class Langevin
 
 			LatticeColourMatrix drift(grid);
 			makeNoise(drift, std::sqrt(2.0 * eps));
-			force[mu][1] += drift;
 
-			// assert(force[mu][0] == 0);
+			// noise enters the force at order beta^-1/2
+			LatticeColourMatrix tmp = peekSeries(force[mu], 1);
+			tmp += drift;
+			pokeSeries(force[mu], tmp, 1);
 		}
 
 		// evolve U = exp(F) U
 		for (int mu = 0; mu < 4; ++mu)
-			U[mu] = exp(force[mu]) * U[mu];
-
-		// TODO: check/project unitarity (order by order)
+			U[mu] = expMat(force[mu], 1.0, No - 1) * U[mu];
 	}
 
 	void landauStep(double alpha)
 	{
-		Field R;
-		for (int i = 0; i < order; ++i)
-			R.append(grid);
+		Field R(grid);
+
 		R = 0.0;
 		for (int mu = 0; mu < 4; ++mu)
 		{
-			Field Amu = log(U[mu]);
+			// turns out, both of these work fine to suppress the drift in
+			// Langevin time. Though Ta() is obviously faster
+			Field Amu = logMat(U[mu]);
+			// Field Amu = Ta(U[mu]);
+
 			R += Amu;
 			R -= Cshift(Amu, mu, -1); // NOTE: adj(A) = -A
 		}
@@ -112,7 +108,7 @@ class Langevin
 		 * grow exponentially in time */
 		R = Ta(R);
 
-		R = exp(R * (-alpha));
+		R = expMat(R, -alpha, No - 1);
 
 		for (int mu = 0; mu < 4; ++mu)
 			U[mu] = R * U[mu] * Cshift(adj(R), mu, 1);
@@ -121,33 +117,32 @@ class Langevin
 	/** compute the algebra elements A=log(U) */
 	std::array<Field, 4> algebra()
 	{
-		std::array<Field, 4> A;
+		std::array<Field, 4> A{Field(grid), Field(grid), Field(grid),
+		                       Field(grid)};
 		for (int mu = 0; mu < 4; ++mu)
-			A[mu] = log(U[mu]);
+			A[mu] = logMat(U[mu]);
 		return A;
 	}
 
 	void zmreg(bool reunit)
 	{
-		Field A;
+		Field A{grid};
 		for (int mu = 0; mu < 4; ++mu)
 		{
-			A = log(U[mu]);
-			for (int i = 0; i < order; ++i)
-			{
-				ColourMatrix avg = sum(A[i]) * (1.0 / A[i]._grid->gSites());
+			A = logMat(U[mu]);
+			ColourMatrixSeries avg = sum(A) * (1.0 / A._grid->gSites());
 
-				// A[i] = A[i] - avg; // This doesn't compile (FIXME)
-				std::vector<ColourMatrix> tmp;
-				unvectorizeToLexOrdArray(tmp, A[i]);
-				for (auto &x : tmp)
-					x -= avg;
-				vectorizeFromLexOrdArray(tmp, A[i]);
+			// A[i] = A[i] - avg; // This doesn't compile (FIXME)
+			std::vector<ColourMatrixSeries> tmp;
+			unvectorizeToLexOrdArray(tmp, A);
+			for (auto &x : tmp)
+				x -= avg;
+			vectorizeFromLexOrdArray(tmp, A);
 
-				if (reunit)
-					A[i] = Ta(A[i]);
-			}
-			U[mu] = exp(A);
+			if (reunit)
+				A = Ta(A);
+
+			U[mu] = expMat(A, 1.0, No - 1);
 		}
 	}
 };
@@ -173,21 +168,22 @@ class AlgebraObservables
 
 	void measure(const std::array<Langevin::Field, 4> &A)
 	{
-		int order = A[0].size();
-		double V = A[0][0]._grid->gSites();
+		double V = A[0]._grid->gSites();
+
+		// TODO: find a more compact way to write these.
 
 		{
-			std::vector<double> tmp1(order, 0);
-			std::vector<double> tmp2(order, 0);
-			std::vector<double> tmp3(order, 0);
-			for (int i = 0; i < order; ++i)
+			std::vector<double> tmp1(No, 0);
+			std::vector<double> tmp2(No, 0);
+			std::vector<double> tmp3(No, 0);
+			for (int i = 0; i < No; ++i)
 				for (int mu = 0; mu < 4; ++mu)
 				{
-					tmp1[i] += (1.0 / V) * norm2(trace(A[mu][i]));
+					LatticeColourMatrix Ai = peekSeries(A[mu], i);
+					tmp1[i] += (1.0 / V) * norm2(trace(Ai));
 					tmp2[i] +=
-					    (1.0 / V) *
-					    norm2(LatticeColourMatrix(A[mu][i] + adj(A[mu][i])));
-					tmp3[i] += norm2(A[mu][i]) * (1.0 / V);
+					    (1.0 / V) * norm2(LatticeColourMatrix(Ai + adj(Ai)));
+					tmp3[i] += norm2(Ai) * (1.0 / V);
 				}
 			traceA.push_back(tmp1);
 			hermA.push_back(tmp2);
@@ -195,16 +191,20 @@ class AlgebraObservables
 		}
 
 		{
-			std::vector<double> tmp1(order, 0);
-			std::vector<double> tmp2(order, 0);
-			std::vector<double> tmp3(order, 0);
-			std::vector<double> tmp4(order, 0);
-			for (int i = 0; i < order; ++i)
+			std::vector<double> tmp1(No, 0);
+			std::vector<double> tmp2(No, 0);
+			std::vector<double> tmp3(No, 0);
+			std::vector<double> tmp4(No, 0);
+			ColourMatrixSeries Ax = sum(A[0]);
+			ColourMatrixSeries Ay = sum(A[1]);
+			ColourMatrixSeries Az = sum(A[2]);
+			ColourMatrixSeries At = sum(A[3]);
+			for (int i = 0; i < No; ++i)
 			{
-				tmp1[i] = norm2((1.0 / V) * sum(A[0][i]));
-				tmp2[i] = norm2((1.0 / V) * sum(A[1][i]));
-				tmp3[i] = norm2((1.0 / V) * sum(A[2][i]));
-				tmp4[i] = norm2((1.0 / V) * sum(A[3][i]));
+				tmp1[i] = (1.0 / V) * norm2(peekSeries(Ax, i));
+				tmp2[i] = (1.0 / V) * norm2(peekSeries(Ay, i));
+				tmp3[i] = (1.0 / V) * norm2(peekSeries(Az, i));
+				tmp4[i] = (1.0 / V) * norm2(peekSeries(At, i));
 			}
 			avgAx.push_back(tmp1);
 			avgAy.push_back(tmp2);
@@ -213,16 +213,14 @@ class AlgebraObservables
 		}
 
 		{
-			std::vector<double> tmp1(order, 0);
+			LatticeColourMatrixSeries w = A[0] - Cshift(A[0], 0, -1);
+			w += A[1] - Cshift(A[1], 1, -1);
+			w += A[2] - Cshift(A[2], 2, -1);
+			w += A[3] - Cshift(A[3], 3, -1);
 
-			for (int i = 0; i < order; ++i)
-			{
-				LatticeColourMatrix w = A[0][i] - Cshift(A[0][i], 0, -1);
-				w += A[1][i] - Cshift(A[1][i], 1, -1);
-				w += A[2][i] - Cshift(A[2][i], 2, -1);
-				w += A[3][i] - Cshift(A[3][i], 3, -1);
-				tmp1[i] += (1.0 / V) * norm2(w);
-			}
+			std::vector<double> tmp1(No);
+			for (int i = 0; i < No; ++i)
+				tmp1[i] = (1.0 / V) * norm2(peekSeries(w, i));
 			gaugeCond.push_back(tmp1);
 		}
 	}
@@ -245,7 +243,6 @@ class AlgebraObservables
 int main(int argc, char **argv)
 {
 	// parameters
-	int order = 5;
 	double maxt = 20;
 	double eps = 0.05;
 
@@ -261,7 +258,6 @@ int main(int argc, char **argv)
 	std::string dummy; // ignore options that go directly to grid
 	CLI::App app{"NSPT for SU(3) lattice gauge theory"};
 	app.add_option("--grid", dummy, "lattice size (e.g. '8.8.8.8')");
-	app.add_option("--order", order, "number of terms in perturbation series");
 	app.add_option("--maxt", maxt, "Langevin time to integrate");
 	app.add_option("--eps", eps, "stepsize for integration");
 	app.add_option("--improvement", improvement, "use improved integrator");
@@ -294,7 +290,7 @@ int main(int argc, char **argv)
 	// data
 	if (seed == -1)
 		seed = std::random_device()();
-	auto lang = Langevin(geom, order, seed);
+	auto lang = Langevin(geom, seed);
 	std::vector<double> ts;
 	vector2d<double> plaq;
 	AlgebraObservables algObs;
@@ -335,12 +331,12 @@ int main(int argc, char **argv)
 			ts.push_back(t + eps);
 
 			// plaquette
-			Series<double> p = avgPlaquette(lang.U);
-			plaq.push_back(p);
+			RealSeries p = avgPlaquette(lang.U);
+			plaq.push_back(asSpan(p));
 
 			fmt::print("t = {}, plaq = ", t);
-			for (int i = 0; i < order; ++i)
-				fmt::print(", {}", p[i]);
+			for (int i = 0; i < No; ++i)
+				fmt::print(", {}", p()()(i)());
 			fmt::print("\n");
 
 			// trace/hermiticity/etc of algebra
@@ -353,7 +349,7 @@ int main(int argc, char **argv)
 	if (filename != "" && filename.find(".json") != std::string::npos)
 	{
 		json jsonParams;
-		jsonParams["order"] = order;
+		jsonParams["order"] = No;
 		jsonParams["geom"] = geom;
 		jsonParams["maxt"] = maxt;
 		jsonParams["eps"] = eps;
@@ -379,7 +375,7 @@ int main(int argc, char **argv)
 	else if (filename != "" && filename.find(".h5") != std::string::npos)
 	{
 		auto file = DataFile::create(filename);
-		file.setAttribute("order", order);
+		file.setAttribute("order", No);
 		file.setAttribute("geom", geom);
 		file.setAttribute("maxt", maxt);
 		file.setAttribute("eps", eps);
