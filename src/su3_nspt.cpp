@@ -7,6 +7,7 @@
 #include "util/vector2d.h"
 #include <fmt/format.h>
 
+#include "nspt/grid_utils.h"
 #include "nspt/pqcd.h"
 
 using namespace Grid;
@@ -253,6 +254,7 @@ int main(int argc, char **argv)
 
 	int doPlot = 0;
 	int seed = -1;
+	int verbosity = 1;
 
 	std::string filename;
 	std::string dummy; // ignore options that go directly to grid
@@ -268,6 +270,7 @@ int main(int argc, char **argv)
 	app.add_option("--plot", doPlot, "show a plot (requires Gnuplot)");
 	app.add_option("--filename", filename, "output file (json format)");
 	app.add_option("--seed", seed, "seed for rng (default = unpredictable)");
+	app.add_option("--verbosity", verbosity, "verbosity (default = 1)");
 	CLI11_PARSE(app, argc, argv);
 
 	if (filename != "" && std::experimental::filesystem::exists(filename))
@@ -286,6 +289,8 @@ int main(int argc, char **argv)
 
 	Grid_init(&argc, &argv);
 	std::vector<int> geom = GridDefaultLatt();
+
+	fmt::print("L = {}, eps = {}, maxt = {}\n", geom[0], eps, maxt);
 
 	// data
 	if (seed == -1)
@@ -334,10 +339,8 @@ int main(int argc, char **argv)
 			RealSeries p = avgPlaquette(lang.U);
 			plaq.push_back(asSpan(p));
 
-			fmt::print("t = {}, plaq = ", t);
-			for (int i = 0; i < No; ++i)
-				fmt::print(", {}", p()()(i)());
-			fmt::print("\n");
+			if (verbosity >= 1)
+				fmt::print("t = {}, plaq = {:.5}\n", t, p);
 
 			// trace/hermiticity/etc of algebra
 			algObs.measure(lang.algebra());
@@ -345,6 +348,9 @@ int main(int argc, char **argv)
 			swMeasure.stop();
 		}
 	}
+
+	if (filename != "")
+		fmt::print("writing results to '{}'\n", filename);
 
 	if (filename != "" && filename.find(".json") != std::string::npos)
 	{

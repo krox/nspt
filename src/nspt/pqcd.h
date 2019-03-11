@@ -2,7 +2,6 @@
 #define NSPT_PQCD_H
 
 #include "Grid/Grid.h"
-#include "util/span.h"
 
 namespace Grid {
 
@@ -272,73 +271,6 @@ inline auto traceColour(const vobj &lhs)
 }
 
 } // namespace pQCD
-
-/** little convenience for my self-made span type */
-util::span<double> asSpan(double &a);
-template <typename T> util::span<double> asSpan(iScalar<T> &a);
-template <typename T, int N> util::span<double> asSpan(iVector<T, N> &a);
-template <typename T, int N> util::span<double> asSpan(iMatrix<T, N> &a);
-template <typename T, int N> util::span<double> asSpan(iSeries<T, N> &a);
-
-util::span<double> asSpan(double &a) { return {&a, 1}; }
-template <typename T> util::span<double> asSpan(iScalar<T> &a)
-{
-	return asSpan(a());
-}
-
-template <typename T, int N> util::span<double> asSpan(iVector<T, N> &a)
-{
-	auto tmp = asSpan(a(0));
-	return {tmp.data(), tmp.size() * N};
-}
-
-template <typename T, int N> util::span<double> asSpan(iMatrix<T, N> &a)
-{
-	auto tmp = asSpan(a(0, 0));
-	return {tmp.data(), tmp.size() * N * N};
-}
-
-template <typename T, int N> util::span<double> asSpan(iSeries<T, N> &a)
-{
-	auto tmp = asSpan(a(0));
-	return {tmp.data(), tmp.size() * N};
-}
-
-util::span<const double> asSpan(const double &a);
-template <typename T> util::span<const double> asSpan(const iScalar<T> &a);
-template <typename T, int N>
-util::span<const double> asSpan(const iVector<T, N> &a);
-template <typename T, int N>
-util::span<const double> asSpan(const iMatrix<T, N> &a);
-template <typename T, int N>
-util::span<const double> asSpan(const iSeries<T, N> &a);
-
-util::span<const double> asSpan(const double &a) { return {&a, 1}; }
-template <typename T> util::span<const double> asSpan(const iScalar<T> &a)
-{
-	return asSpan(a());
-}
-
-template <typename T, int N>
-util::span<const double> asSpan(const iVector<T, N> &a)
-{
-	auto tmp = asSpan(a(0));
-	return {tmp.data(), tmp.size() * N};
-}
-
-template <typename T, int N>
-util::span<const double> asSpan(const iMatrix<T, N> &a)
-{
-	auto tmp = asSpan(a(0, 0));
-	return {tmp.data(), tmp.size() * N * N};
-}
-
-template <typename T, int N>
-util::span<const double> asSpan(const iSeries<T, N> &a)
-{
-	auto tmp = asSpan(a(0));
-	return {tmp.data(), tmp.size() * N};
-}
 
 } // namespace Grid
 
