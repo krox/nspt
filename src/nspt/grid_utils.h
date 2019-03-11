@@ -160,6 +160,21 @@ struct formatter<Grid::iSeries<T, N>> : formatter<T>
 	}
 };
 
+template <typename T> struct formatter<util::span<T>> : formatter<T>
+{
+	template <typename FormatContext>
+	auto format(const util::span<T> &a, FormatContext &ctx)
+	{
+		auto out = format_to(ctx.out(), "[");
+		for (int i = 0; i < (int)a.size(); ++i)
+		{
+			out = formatter<T>::format(a[i], ctx);
+			out = format_to(out, i == (int)a.size() - 1 ? "]" : ", ");
+		}
+		return out;
+	}
+};
+
 } // namespace fmt
 
 #endif

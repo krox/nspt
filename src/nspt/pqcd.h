@@ -270,6 +270,15 @@ inline auto traceColour(const vobj &lhs)
 	return traceIndex<3>(lhs);
 }
 
+// norm2() of every order seperately
+template <typename LS> RealSeries norm2_series(const LS &latt)
+{
+	RealSeries r;
+	for (int i = 0; i < No; ++i)
+		r()()(i)() = norm2(peekSeries(latt, i));
+	return r;
+}
+
 } // namespace pQCD
 
 } // namespace Grid

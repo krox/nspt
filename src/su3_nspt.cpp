@@ -2,9 +2,12 @@
 
 #include "util/json.hpp"
 
+#include "util/CLI11.hpp"
 #include "util/gnuplot.h"
+#include "util/hdf5.h"
 #include "util/stopwatch.h"
 #include "util/vector2d.h"
+#include <experimental/filesystem>
 #include <fmt/format.h>
 
 #include "nspt/grid_utils.h"
@@ -15,15 +18,10 @@ using Grid::QCD::SpaceTimeGrid;
 using namespace Grid::pQCD;
 using namespace util;
 
+#include "nspt/algebra_observables.h"
 #include "nspt/wilson.h"
 
-#include "util/CLI11.hpp"
-
-#include "util/hdf5.h"
-
 using namespace nlohmann;
-
-#include <experimental/filesystem>
 
 /** Perturbative Langevin evolution for (quenched) SU(3) lattice theory */
 class Langevin
@@ -145,99 +143,6 @@ class Langevin
 
 			U[mu] = expMat(A, 1.0, No - 1);
 		}
-	}
-};
-
-class AlgebraObservables
-{
-  public:
-	/** all these observables are computed sepraately at every order */
-
-	// these are zero except for rounding errors (can be corrected by "reunit")
-	vector2d<double> traceA; // avg_µx |Tr(A)|^2
-	vector2d<double> hermA;  // avg_µx |A+A^+|^2
-
-	// these drift away from zero as a random walk (can be fixed by "zmreg")
-	vector2d<double> avgAx, avgAy, avgAz, avgAt; // |avg_x A(µ)|^2
-
-	// this is zero in Landau gauge, but drifts away in simulation.
-	// can be kept moderate by "gaugefix" (no exact fixing needed)
-	vector2d<double> gaugeCond; // avg_x |∂µ A(µ)|^2
-
-	// no specific behaviour, but unbounded growth is a bad sign
-	vector2d<double> normA; // avg_µx |A|^2
-
-	void measure(const std::array<Langevin::Field, 4> &A)
-	{
-		double V = A[0]._grid->gSites();
-
-		// TODO: find a more compact way to write these.
-
-		{
-			std::vector<double> tmp1(No, 0);
-			std::vector<double> tmp2(No, 0);
-			std::vector<double> tmp3(No, 0);
-			for (int i = 0; i < No; ++i)
-				for (int mu = 0; mu < 4; ++mu)
-				{
-					LatticeColourMatrix Ai = peekSeries(A[mu], i);
-					tmp1[i] += (1.0 / V) * norm2(trace(Ai));
-					tmp2[i] +=
-					    (1.0 / V) * norm2(LatticeColourMatrix(Ai + adj(Ai)));
-					tmp3[i] += norm2(Ai) * (1.0 / V);
-				}
-			traceA.push_back(tmp1);
-			hermA.push_back(tmp2);
-			normA.push_back(tmp3);
-		}
-
-		{
-			std::vector<double> tmp1(No, 0);
-			std::vector<double> tmp2(No, 0);
-			std::vector<double> tmp3(No, 0);
-			std::vector<double> tmp4(No, 0);
-			ColourMatrixSeries Ax = sum(A[0]);
-			ColourMatrixSeries Ay = sum(A[1]);
-			ColourMatrixSeries Az = sum(A[2]);
-			ColourMatrixSeries At = sum(A[3]);
-			for (int i = 0; i < No; ++i)
-			{
-				tmp1[i] = (1.0 / V) * norm2(peekSeries(Ax, i));
-				tmp2[i] = (1.0 / V) * norm2(peekSeries(Ay, i));
-				tmp3[i] = (1.0 / V) * norm2(peekSeries(Az, i));
-				tmp4[i] = (1.0 / V) * norm2(peekSeries(At, i));
-			}
-			avgAx.push_back(tmp1);
-			avgAy.push_back(tmp2);
-			avgAz.push_back(tmp3);
-			avgAt.push_back(tmp4);
-		}
-
-		{
-			LatticeColourMatrixSeries w = A[0] - Cshift(A[0], 0, -1);
-			w += A[1] - Cshift(A[1], 1, -1);
-			w += A[2] - Cshift(A[2], 2, -1);
-			w += A[3] - Cshift(A[3], 3, -1);
-
-			std::vector<double> tmp1(No);
-			for (int i = 0; i < No; ++i)
-				tmp1[i] = (1.0 / V) * norm2(peekSeries(w, i));
-			gaugeCond.push_back(tmp1);
-		}
-	}
-
-	void plot(const std::vector<double> &ts)
-	{
-		auto plt = [] { return Gnuplot().style("lines").setLogScaleY(); };
-
-		plt().plotData(ts, traceA, "avg |Tr(A)|^2");
-		plt().plotData(ts, hermA, "avg |A+A^+|^2");
-		plt().plotData(ts, normA, "avg |A|^2");
-		plt().plotData(ts, gaugeCond, "avg |∂µ A(µ)|^2");
-		plt().plotData(ts, avgAx, "|avg A(x)|^2");
-		plt().plotData(ts, avgAy, "|avg A(y)|^2");
-		plt().plotData(ts, avgAz, "|avg A(z)|^2");
-		plt().plotData(ts, avgAt, "|avg A(t)|^2");
 	}
 };
 
