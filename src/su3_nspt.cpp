@@ -84,7 +84,7 @@ class Langevin
 
 		// evolve U = exp(F) U
 		for (int mu = 0; mu < 4; ++mu)
-			U[mu] = expMat(force[mu], 1.0, No - 1) * U[mu];
+			U[mu] = expMatFast(force[mu], 1.0) * U[mu];
 	}
 
 	void landauStep(double alpha)
@@ -96,7 +96,7 @@ class Langevin
 		{
 			// turns out, both of these work fine to suppress the drift in
 			// Langevin time. Though Ta() is obviously faster
-			Field Amu = logMat(U[mu]);
+			Field Amu = logMatFast(U[mu]);
 			// Field Amu = Ta(U[mu]);
 
 			R += Amu;
@@ -107,7 +107,7 @@ class Langevin
 		 * grow exponentially in time */
 		R = Ta(R);
 
-		R = expMat(R, -alpha, No - 1);
+		R = expMatFast(R, -alpha);
 
 		for (int mu = 0; mu < 4; ++mu)
 			U[mu] = R * U[mu] * Cshift(adj(R), mu, 1);
@@ -119,7 +119,7 @@ class Langevin
 		std::array<Field, 4> A{Field(grid), Field(grid), Field(grid),
 		                       Field(grid)};
 		for (int mu = 0; mu < 4; ++mu)
-			A[mu] = logMat(U[mu]);
+			A[mu] = logMatFast(U[mu]);
 		return A;
 	}
 
@@ -128,7 +128,7 @@ class Langevin
 		Field A{grid};
 		for (int mu = 0; mu < 4; ++mu)
 		{
-			A = logMat(U[mu]);
+			A = logMatFast(U[mu]);
 			ColourMatrixSeries avg = sum(A) * (1.0 / A._grid->gSites());
 
 			// A[i] = A[i] - avg; // This doesn't compile (FIXME)
@@ -141,7 +141,7 @@ class Langevin
 			if (reunit)
 				A = Ta(A);
 
-			U[mu] = expMat(A, 1.0, No - 1);
+			U[mu] = expMatFast(A, 1.0);
 		}
 	}
 };
