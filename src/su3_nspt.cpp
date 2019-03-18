@@ -33,14 +33,19 @@ class Langevin
 
 	// Fields are expanded in beta^-0.5
 	using Field = LatticeColourMatrixSeries;
+	using FieldTerm = LatticeColourMatrix;
 
 	// gauge config
 	std::array<Field, 4> U;
 
+	// temporary
+	std::array<Field, 4> Uprime;
+
 	Langevin(std::vector<int> latt, int seed)
 	    : grid(SpaceTimeGrid::makeFourDimGrid(
 	          latt, GridDefaultSimd(Nd, vComplex::Nsimd()), GridDefaultMpi())),
-	      pRNG(grid), U{Field(grid), Field(grid), Field(grid), Field(grid)}
+	      pRNG(grid), U{Field(grid), Field(grid), Field(grid), Field(grid)},
+	      Uprime{Field(grid), Field(grid), Field(grid), Field(grid)}
 	{
 		// start from unit config
 		for (int mu = 0; mu < 4; ++mu)
@@ -59,6 +64,7 @@ class Langevin
 		out = Ta(out);
 	}
 
+	/** Eueler step */
 	void evolveStep(double eps)
 	{
 		std::array<Field, 4> force{Field(grid), Field(grid), Field(grid),
@@ -85,6 +91,108 @@ class Langevin
 		// evolve U = exp(F) U
 		for (int mu = 0; mu < 4; ++mu)
 			U[mu] = expMatFast(force[mu], 1.0) * U[mu];
+	}
+
+	/** second-order "BF scheme" */
+	void evolveStepImproved(double eps)
+	{
+		std::array<Field, 4> force{Field(grid), Field(grid), Field(grid),
+		                           Field(grid)};
+		/*std::array<Field, 4> force2{Field(grid), Field(grid), Field(grid),
+		                            Field(grid)};*/
+		std::array<FieldTerm, 4> noise{FieldTerm(grid), FieldTerm(grid),
+		                               FieldTerm(grid), FieldTerm(grid)};
+
+		// compute force and noise at U
+		for (int mu = 0; mu < 4; ++mu)
+		{
+			wilsonDeriv(force[mu], U, mu);
+			force[mu] *= -eps;
+			makeNoise(noise[mu], std::sqrt(2.0 * eps));
+		}
+
+		// evolve U' = exp(force + noise) U
+		for (int mu = 0; mu < 4; ++mu)
+		{
+			// noise enters the force at order beta^-1/2
+			Field tmp = force[mu];
+			LatticeColourMatrix tmp2 = peekSeries(tmp, 1);
+			tmp2 += noise[mu];
+			pokeSeries(tmp, tmp2, 1);
+
+			Uprime[mu] = expMatFast(tmp, 1.0) * U[mu];
+		}
+
+		// build improved force
+		for (int mu = 0; mu < 4; ++mu)
+		{
+			Field tmp(grid);
+			wilsonDeriv(tmp, Uprime, mu);
+			force[mu] = 0.5 * (force[mu] - eps * tmp) -
+			            (eps * eps * Nc / 6.0) * shiftSeries(tmp, 2);
+		}
+
+		// evolve U = exp(force' + noise) U
+		for (int mu = 0; mu < 4; ++mu)
+		{
+			// noise enters the force at order beta^-1/2
+			Field tmp = force[mu];
+			LatticeColourMatrix tmp2 = peekSeries(tmp, 1);
+			tmp2 += noise[mu];
+			pokeSeries(tmp, tmp2, 1);
+
+			U[mu] = expMatFast(tmp, 1.0) * U[mu];
+		}
+	}
+
+	/** second-order "Bauer" scheme */
+	void evolveStepBraun(double eps)
+	{
+		Field force{Field(grid)};
+		std::array<FieldTerm, 4> noise{FieldTerm(grid), FieldTerm(grid),
+		                               FieldTerm(grid), FieldTerm(grid)};
+
+		/** constant names as in https://arxiv.org/pdf/1303.3279.pdf */
+		double k1 = (-3.0 + 2.0 * std::sqrt(2.0)) / 2.0;
+		double k2 = (-2.0 + std::sqrt(2.0)) / 2.0;
+		// double k3 = 0.0;
+		double k4 = 1.0;
+		double k5 = (5.0 - 3.0 * std::sqrt(2.0)) / 12.0;
+		double k6 = 1.0;
+
+		// compute force and noise at U
+		// evolve U' = exp(force + noise) U
+		for (int mu = 0; mu < 4; ++mu)
+		{
+			wilsonDeriv(force, U, mu);
+			force *= eps * k1;
+			makeNoise(noise[mu], std::sqrt(2.0 * eps));
+
+			// noise enters the force at order beta^-1/2
+			LatticeColourMatrix tmp2 = peekSeries(force, 1);
+			tmp2 += k2 * noise[mu];
+			pokeSeries(force, tmp2, 1);
+
+			Uprime[mu] = expMatFast(force, 1.0) * U[mu];
+		}
+
+		// compute force at U'
+		// evolve U = exp(force' + noise) U
+		for (int mu = 0; mu < 4; ++mu)
+		{
+			wilsonDeriv(force, Uprime, mu);
+			force *= eps * k4;
+
+			// the "C_A" term enters at beta^-1
+			force += (k5 * eps * eps * Nc) * shiftSeries(force, 2);
+
+			// noise enters the force at order beta^-1/2
+			LatticeColourMatrix tmp2 = peekSeries(force, 1);
+			tmp2 += k6 * noise[mu];
+			pokeSeries(force, tmp2, 1);
+
+			U[mu] = expMatFast(force, -1.0) * U[mu];
+		}
 	}
 
 	void landauStep(double alpha)
@@ -207,6 +315,7 @@ int main(int argc, char **argv)
 
 	// performance measure
 	Stopwatch swEvolve, swMeasure, swLandau, swZmreg;
+	double lastPrint = -1.0;
 
 	// evolve it some time
 	for (double t = 0.0; t < maxt; t += eps)
@@ -215,6 +324,10 @@ int main(int argc, char **argv)
 		swEvolve.start();
 		if (improvement == 0)
 			lang.evolveStep(eps);
+		else if (improvement == 1)
+			lang.evolveStepImproved(eps);
+		else if (improvement == 2)
+			lang.evolveStepBraun(eps);
 		else
 			assert(false);
 		swEvolve.stop();
@@ -244,8 +357,11 @@ int main(int argc, char **argv)
 			RealSeries p = avgPlaquette(lang.U);
 			plaq.push_back(asSpan(p));
 
-			if (verbosity >= 1)
+			if (verbosity >= 2 || (verbosity >= 1 && t - lastPrint >= 0.99999))
+			{
 				fmt::print("t = {}, plaq = {:.5}\n", t, p);
+				lastPrint = t;
+			}
 
 			// trace/hermiticity/etc of algebra
 			algObs.measure(lang.algebra());
