@@ -9,6 +9,8 @@
 
 #include "Grid/Grid.h"
 #include "util/span.h"
+#include <complex>
+#include <fmt/format.h>
 
 namespace Grid {
 
@@ -18,7 +20,7 @@ template <typename T, int N> util::span<double> asSpan(iVector<T, N> &a);
 template <typename T, int N> util::span<double> asSpan(iMatrix<T, N> &a);
 template <typename T, int N> util::span<double> asSpan(iSeries<T, N> &a);
 
-util::span<double> asSpan(double &a) { return {&a, 1}; }
+inline util::span<double> asSpan(double &a) { return {&a, 1}; }
 template <typename T> util::span<double> asSpan(iScalar<T> &a)
 {
 	return asSpan(a());
@@ -51,7 +53,7 @@ util::span<const double> asSpan(const iMatrix<T, N> &a);
 template <typename T, int N>
 util::span<const double> asSpan(const iSeries<T, N> &a);
 
-util::span<const double> asSpan(const double &a) { return {&a, 1}; }
+inline util::span<const double> asSpan(const double &a) { return {&a, 1}; }
 template <typename T> util::span<const double> asSpan(const iScalar<T> &a)
 {
 	return asSpan(a());

@@ -22,7 +22,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=native -Wall -Wextra -Wno-unused-variable -Wno-register -Werror -fopenmp")
 
-file(GLOB utils "src/util/*.cpp")
+file(GLOB utils "src/util/*.cpp" "src/nspt/*.cpp")
 
 set(binaries "su3_sweep" "su3_langevin" "su3_nspt")
 foreach(bin ${binaries})

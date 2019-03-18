@@ -53,7 +53,7 @@ template <typename T> class span
 
 #ifdef NLOHMANN_JSON_HPP
 
-void to_json(nlohmann::json &j, span<const double> v)
+inline void to_json(nlohmann::json &j, span<const double> v)
 {
 	j = nlohmann::json::array();
 	for (size_t i = 0; i < v.size(); ++i)

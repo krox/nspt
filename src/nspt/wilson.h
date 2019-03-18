@@ -8,7 +8,7 @@
  *     - Support Series types
  */
 
-double avgPlaquette(const std::array<LatticeColourMatrix, 4> &U)
+inline double avgPlaquette(const std::array<LatticeColourMatrix, 4> &U)
 {
 	double s = 0.0;
 	for (int mu = 0; mu < 4; ++mu)
@@ -19,7 +19,8 @@ double avgPlaquette(const std::array<LatticeColourMatrix, 4> &U)
 	return s * (1.0 / 3.0 / 6.0 / U[0]._grid->gSites());
 }
 
-RealSeries avgPlaquette(const std::array<LatticeColourMatrixSeries, 4> &U)
+inline RealSeries
+avgPlaquette(const std::array<LatticeColourMatrixSeries, 4> &U)
 {
 	RealSeries s = 0.0;
 	for (int mu = 0; mu < 4; ++mu)
