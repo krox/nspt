@@ -147,7 +147,7 @@ void Langevin::evolveStepBauer(double eps)
 		force *= eps * k4;
 
 		// the "C_A" term enters at beta^-1
-		force += (k5 * eps * eps * Nc) * shiftSeries(force, 2);
+		force += (k5 * eps * Nc / k4) * shiftSeries(force, 2);
 
 		// noise enters the force at order beta^-1/2
 		LatticeColourMatrix tmp2 = peekSeries(force, 1);
