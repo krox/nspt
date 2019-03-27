@@ -25,10 +25,26 @@ template <typename vtype>
 using iSinglet = iScalar<iScalar<iScalar<iScalar<vtype>>>>;
 template <typename vtype>
 using iSingletSeries = iScalar<iScalar<iSeries<iScalar<vtype>, No>>>;
+
 template <typename vtype>
 using iColourMatrix = iScalar<iScalar<iScalar<iMatrix<vtype, Nc>>>>;
 template <typename vtype>
 using iColourMatrixSeries = iScalar<iScalar<iSeries<iMatrix<vtype, Nc>, No>>>;
+template <typename vtype>
+using iColourVector = iScalar<iScalar<iScalar<iVector<vtype, Nc>>>>;
+template <typename vtype>
+using iColourVectorSeries = iScalar<iScalar<iSeries<iVector<vtype, Nc>, No>>>;
+
+template <typename vtype>
+using iSpinColourMatrix = iScalar<iMatrix<iScalar<iMatrix<vtype, Nc>>, Ns>>;
+template <typename vtype>
+using iSpinColourMatrixSeries =
+    iScalar<iMatrix<iSeries<iMatrix<vtype, Nc>, No>, Ns>>;
+template <typename vtype>
+using iSpinColourVector = iScalar<iVector<iScalar<iVector<vtype, Nc>>, Ns>>;
+template <typename vtype>
+using iSpinColourVectorSeries =
+    iScalar<iVector<iSeries<iVector<vtype, Nc>, No>, Ns>>;
 
 /** concrete tensor types (without SIMD) */
 
@@ -36,8 +52,16 @@ typedef iSinglet<Real> TReal;
 typedef iSinglet<Complex> TComplex;
 typedef iSingletSeries<Real> RealSeries;
 typedef iSingletSeries<Complex> ComplexSeries;
+
 typedef iColourMatrix<Complex> ColourMatrix;
 typedef iColourMatrixSeries<Complex> ColourMatrixSeries;
+typedef iColourVector<Complex> ColourVector;
+typedef iColourVectorSeries<Complex> ColourVectorSeries;
+
+typedef iSpinColourMatrix<Complex> SpinColourMatrix;
+typedef iSpinColourMatrixSeries<Complex> SpinColourMatrixSeries;
+typedef iSpinColourVector<Complex> SpinColourVector;
+typedef iSpinColourVectorSeries<Complex> SpinColourVectorSeries;
 
 /** concrete tensor types (with SIMD) */
 
@@ -45,8 +69,16 @@ typedef iSinglet<vReal> vTReal;
 typedef iSinglet<vComplex> vTComplex;
 typedef iSingletSeries<vReal> vRealSeries;
 typedef iSingletSeries<vComplex> vComplexSeries;
+
 typedef iColourMatrix<vComplex> vColourMatrix;
 typedef iColourMatrixSeries<vComplex> vColourMatrixSeries;
+typedef iColourVector<vComplex> vColourVector;
+typedef iColourVectorSeries<vComplex> vColourVectorSeries;
+
+typedef iSpinColourMatrix<vComplex> vSpinColourMatrix;
+typedef iSpinColourMatrixSeries<vComplex> vSpinColourMatrixSeries;
+typedef iSpinColourVector<vComplex> vSpinColourVector;
+typedef iSpinColourVectorSeries<vComplex> vSpinColourVectorSeries;
 
 /** lattice versions of tensor types (with SIMD) */
 
@@ -54,8 +86,16 @@ typedef Lattice<vTReal> LatticeReal;
 typedef Lattice<vTComplex> LatticeComplex;
 typedef Lattice<vRealSeries> LatticeRealSeries;
 typedef Lattice<vComplexSeries> LatticeComplexSeries;
+
 typedef Lattice<vColourMatrix> LatticeColourMatrix;
 typedef Lattice<vColourMatrixSeries> LatticeColourMatrixSeries;
+typedef Lattice<vColourVector> LatticeColourVector;
+typedef Lattice<vColourVectorSeries> LatticeColourVectorSeries;
+
+typedef Lattice<vSpinColourMatrix> LatticeSpinColourMatrix;
+typedef Lattice<vSpinColourMatrixSeries> LatticeSpinColourMatrixSeries;
+typedef Lattice<vSpinColourVector> LatticeSpinColourVector;
+typedef Lattice<vSpinColourVectorSeries> LatticeSpinColourVectorSeries;
 
 /** Peek and Poke named after physics attributes */
 
