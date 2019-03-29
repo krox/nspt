@@ -22,21 +22,24 @@ template <typename T> class vector2d
 	size_t size() const { return height_ * width_; }
 
 	/** row access */
-	span<T> operator[](size_t i)
-	{
-		return span<T>(data_.data() + width_ * i, width_);
-	}
-	span<const T> operator[](size_t i) const
+	span<T> row(size_t i) { return span<T>(data_.data() + width_ * i, width_); }
+	span<const T> row(size_t i) const
 	{
 		return span<const T>(data_.data() + width_ * i, width_);
 	}
-	span<T> operator()(size_t i)
+	span<T> operator[](size_t i) { return row(i); }
+	span<const T> operator[](size_t i) const { return row(i); }
+	span<T> operator()(size_t i) { return row(i); }
+	span<const T> operator()(size_t i) const { return row(i); }
+
+	/** column access */
+	gspan<T> col(size_t j)
 	{
-		return span<T>(data_.data() + width_ * i, width_);
+		return gspan<T>(data_.data() + j, height_, width_);
 	}
-	span<const T> operator()(size_t i) const
+	gspan<const T> col(size_t j) const
 	{
-		return span<const T>(data_.data() + width_ * i, width_);
+		return gspan<const T>(data_.data() + j, height_, width_);
 	}
 
 	/** element access */
@@ -52,7 +55,7 @@ template <typename T> class vector2d
 	T &flat(size_t i) { return data_[i]; }
 	const T &flat(size_t i) const { return data_[i]; }
 
-	/** add/remove row at bottom */
+	/** add one row at bottom */
 	void push_back(span<const T> v)
 	{
 		if (width_ == (size_t)-1)
@@ -67,6 +70,8 @@ template <typename T> class vector2d
 			data_.push_back(v[i]);
 		height_ += 1;
 	}
+
+	/** remove one row from bottom */
 	void pop_back()
 	{
 		assert(height_ > 0);

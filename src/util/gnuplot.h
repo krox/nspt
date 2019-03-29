@@ -33,19 +33,20 @@ class Gnuplot
 	                      double max, const std::string &title = "");
 
 	/** plot raw data points (i, ys[i]) */
-	Gnuplot &plotData(span<const double> ys, const std::string &title = "data");
-	Gnuplot &plotError(span<const double> ys, span<const double> err,
+	Gnuplot &plotData(gspan<const double> ys,
+	                  const std::string &title = "data");
+	Gnuplot &plotError(gspan<const double> ys, gspan<const double> err,
 	                   const std::string &title = "data");
 
 	/** plot raw data points (xs[i], ys[i]) */
-	Gnuplot &plotData(span<const double> xs, span<const double> ys,
+	Gnuplot &plotData(gspan<const double> xs, gspan<const double> ys,
 	                  const std::string &title = "data");
-	Gnuplot &plotError(span<const double> xs, span<const double> ys,
-	                   span<const double> err,
+	Gnuplot &plotError(gspan<const double> xs, gspan<const double> ys,
+	                   gspan<const double> err,
 	                   const std::string &title = "data");
 
 	/** plot multiple data lines */
-	Gnuplot &plotData(span<const double> xs, const vector2d<double> &ys,
+	Gnuplot &plotData(gspan<const double> xs, const vector2d<double> &ys,
 	                  const std::string &title = "data");
 
 	/** plot a histogram */

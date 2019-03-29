@@ -46,7 +46,7 @@ Gnuplot &Gnuplot::plotFunction(const std::function<double(double)> &fun,
 	return *this;
 }
 
-Gnuplot &Gnuplot::plotData(span<const double> ys, const std::string &title)
+Gnuplot &Gnuplot::plotData(gspan<const double> ys, const std::string &title)
 {
 	std::string filename = fmt::format("gnuplot_{}_{}.txt", plotID, nplots);
 	std::ofstream file(filename);
@@ -61,7 +61,7 @@ Gnuplot &Gnuplot::plotData(span<const double> ys, const std::string &title)
 	return *this;
 }
 
-Gnuplot &Gnuplot::plotError(span<const double> ys, span<const double> err,
+Gnuplot &Gnuplot::plotError(gspan<const double> ys, gspan<const double> err,
                             const std::string &title)
 {
 	std::string filename = fmt::format("gnuplot_{}_{}.txt", plotID, nplots);
@@ -77,7 +77,7 @@ Gnuplot &Gnuplot::plotError(span<const double> ys, span<const double> err,
 	return *this;
 }
 
-Gnuplot &Gnuplot::plotData(span<const double> xs, span<const double> ys,
+Gnuplot &Gnuplot::plotData(gspan<const double> xs, gspan<const double> ys,
                            const std::string &title)
 {
 	std::string filename = fmt::format("gnuplot_{}_{}.txt", plotID, nplots);
@@ -94,8 +94,8 @@ Gnuplot &Gnuplot::plotData(span<const double> xs, span<const double> ys,
 	return *this;
 }
 
-Gnuplot &Gnuplot::plotError(span<const double> xs, span<const double> ys,
-                            span<const double> err, const std::string &title)
+Gnuplot &Gnuplot::plotError(gspan<const double> xs, gspan<const double> ys,
+                            gspan<const double> err, const std::string &title)
 {
 	std::string filename = fmt::format("gnuplot_{}_{}.txt", plotID, nplots);
 	std::ofstream file(filename);
@@ -111,7 +111,7 @@ Gnuplot &Gnuplot::plotError(span<const double> xs, span<const double> ys,
 	return *this;
 }
 
-Gnuplot &Gnuplot::plotData(span<const double> xs, const vector2d<double> &ys,
+Gnuplot &Gnuplot::plotData(gspan<const double> xs, const vector2d<double> &ys,
                            const std::string &title)
 {
 	std::string filename = fmt::format("gnuplot_{}_{}.txt", plotID, nplots);
