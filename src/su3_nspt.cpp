@@ -27,7 +27,8 @@ using namespace nlohmann;
 int main(int argc, char **argv)
 {
 	// parameters
-	double maxt = 20;
+	int count = 400;
+	int discard = 0;
 	double eps = 0.05;
 
 	int improvement = 1;
@@ -38,12 +39,14 @@ int main(int argc, char **argv)
 	int doPlot = 0;
 	int seed = -1;
 	int verbosity = 1;
+	bool plotSeparate = false;
 
 	std::string filename;
 	std::string dummy; // ignore options that go directly to grid
 	CLI::App app{"NSPT for SU(3) lattice gauge theory"};
 	app.add_option("--grid", dummy, "lattice size (e.g. '8.8.8.8')");
-	app.add_option("--maxt", maxt, "Langevin time to integrate");
+	app.add_option("--count", count, "number of configs to generate");
+	app.add_option("--discard", discard, "thermalization");
 	app.add_option("--eps", eps, "stepsize for integration");
 	app.add_option("--improvement", improvement, "use improved integrator");
 	app.add_option("--gaugefix", gaugefix, "do stochastic gauge fixing");
@@ -51,6 +54,7 @@ int main(int argc, char **argv)
 	app.add_option("--reunit", reunit, "explicitly project onto group/algebra");
 	app.add_option("--threads", dummy);
 	app.add_option("--plot", doPlot, "show a plot (requires Gnuplot)");
+	app.add_flag("--plot-separate", plotSeparate, "plot orders separately");
 	app.add_option("--filename", filename, "output file (json format)");
 	app.add_option("--seed", seed, "seed for rng (default = unpredictable)");
 	app.add_option("--verbosity", verbosity, "verbosity (default = 1)");
@@ -73,7 +77,8 @@ int main(int argc, char **argv)
 	Grid_init(&argc, &argv);
 	std::vector<int> geom = GridDefaultLatt();
 
-	fmt::print("L = {}, eps = {}, maxt = {}\n", geom[0], eps, maxt);
+	fmt::print("L = {}, eps = {}, maxt = {}\n", geom[0], eps,
+	           (count + discard) * eps);
 
 	// data
 	if (seed == -1)
@@ -88,7 +93,7 @@ int main(int argc, char **argv)
 	double lastPrint = -1.0;
 
 	// evolve it some time
-	for (double t = 0.0; t < maxt; t += eps)
+	for (int k = -discard; k < count; ++k)
 	{
 		// step 1: langevin evolution
 		swEvolve.start();
@@ -119,25 +124,28 @@ int main(int argc, char **argv)
 		}
 
 		// step 3: measurements
+
+		swMeasure.start();
+
+		double t = (k + discard + 1) * eps;  // Langevin time
+		RealSeries p = avgPlaquette(lang.U); // plaquette
+
+		if (verbosity >= 2 || (verbosity >= 1 && k % 10 == 0))
 		{
-			swMeasure.start();
-			ts.push_back(t + eps);
+			fmt::print("k = {}/{} t = {}, plaq = {:.5}\n", k, count, t, p);
+			lastPrint = t;
+		}
 
-			// plaquette
-			RealSeries p = avgPlaquette(lang.U);
+		if (k >= 0)
+		{
+			ts.push_back(t);
 			plaq.push_back(asSpan(p));
-
-			if (verbosity >= 2 || (verbosity >= 1 && t - lastPrint >= 0.99999))
-			{
-				fmt::print("t = {}, plaq = {:.5}\n", t, p);
-				lastPrint = t;
-			}
 
 			// trace/hermiticity/etc of algebra
 			algObs.measure(lang.algebra());
-
-			swMeasure.stop();
 		}
+
+		swMeasure.stop();
 	}
 
 	if (filename != "")
@@ -148,7 +156,8 @@ int main(int argc, char **argv)
 		json jsonParams;
 		jsonParams["order"] = No;
 		jsonParams["geom"] = geom;
-		jsonParams["maxt"] = maxt;
+		jsonParams["count"] = count;
+		jsonParams["discard"] = discard;
 		jsonParams["eps"] = eps;
 		jsonParams["improvement"] = improvement;
 		jsonParams["gaugefix"] = gaugefix;
@@ -174,7 +183,8 @@ int main(int argc, char **argv)
 		auto file = DataFile::create(filename);
 		file.setAttribute("order", No);
 		file.setAttribute("geom", geom);
-		file.setAttribute("maxt", maxt);
+		file.setAttribute("count", count);
+		file.setAttribute("discard", discard);
 		file.setAttribute("eps", eps);
 		file.setAttribute("improvement", improvement);
 		file.setAttribute("gaugefix", gaugefix);
@@ -199,7 +209,14 @@ int main(int argc, char **argv)
 	fmt::print("time for measurments: {}\n", swMeasure.secs());
 
 	if (doPlot >= 1)
-		Gnuplot().style("lines").plotData(ts, plaq, "plaq");
+	{
+		if (plotSeparate)
+			for (int i = 2; i < No; i += 2)
+				Gnuplot().style("lines").plotData(ts, plaq.col(i),
+				                                  fmt::format("plaq[{}]", i));
+		else
+			Gnuplot().style("lines").plotData(ts, plaq, "plaq");
+	}
 	if (doPlot >= 2)
 		algObs.plot(ts);
 
