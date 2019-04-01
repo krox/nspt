@@ -6,21 +6,37 @@
 
 namespace util {
 
-double mean(span<const double> xs)
+double mean(gspan<const double> xs)
 {
 	double sum = 0;
-	for (double x : xs)
-		sum += x;
+	for (size_t i = 0; i < xs.size(); ++i)
+		sum += xs[i];
 	return sum / xs.size();
 }
 
-double variance(span<const double> xs)
+double variance(gspan<const double> xs)
 {
 	double m = mean(xs);
 	double sum = 0;
-	for (double x : xs)
-		sum += (x - m) * (x - m);
+	for (size_t i = 0; i < xs.size(); ++i)
+		sum += (xs[i] - m) * (xs[i] - m);
 	return sum / xs.size();
+}
+
+double covariance(gspan<const double> xs, gspan<const double> ys)
+{
+	assert(xs.size() == ys.size());
+	double mx = mean(xs);
+	double my = mean(ys);
+	double sum = 0;
+	for (size_t i = 0; i < xs.size(); ++i)
+		sum += (xs[i] - mx) * (ys[i] - my);
+	return sum / xs.size();
+}
+
+double correlation(gspan<const double> xs, gspan<const double> ys)
+{
+	return covariance(xs, ys) / std::sqrt(variance(xs) * variance(ys));
 }
 
 ConstantFit::ConstantFit(span<const double> ys)

@@ -10,8 +10,11 @@
 
 namespace util {
 
-double mean(span<const double> xs);
-double variance(span<const double> xs);
+/** simple population mean/variance */
+double mean(gspan<const double> xs);
+double variance(gspan<const double> xs);
+double covariance(gspan<const double> xs, gspan<const double> ys);
+double correlation(gspan<const double> xs, gspan<const double> ys);
 
 /** fit constant function f(x) = a */
 struct ConstantFit
