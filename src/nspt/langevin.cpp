@@ -37,14 +37,14 @@ void Langevin::evolveStep(double eps, double beta)
 	std::array<Field, 4> force{Field(grid), Field(grid), Field(grid),
 	                           Field(grid)};
 
-	// build force term: F = -eps*beta*D(S) + sqrt(eps) * eta
+	// build force term: F = -eps*D(S) + sqrt(eps/beta) * eta
 	for (int mu = 0; mu < 4; ++mu)
 	{
 		wilsonDeriv(force[mu], U, mu);
-		force[mu] *= -eps * beta;
+		force[mu] *= -eps;
 
 		Field drift(grid);
-		makeNoise(drift, std::sqrt(2.0 * eps));
+		makeNoise(drift, std::sqrt(2.0 * eps / beta));
 		force[mu] += drift;
 	}
 
@@ -64,8 +64,8 @@ void Langevin::evolveStepImproved(double eps, double beta)
 	for (int mu = 0; mu < 4; ++mu)
 	{
 		wilsonDeriv(force[mu], U, mu);
-		force[mu] *= -eps * beta;
-		makeNoise(noise[mu], std::sqrt(2.0 * eps));
+		force[mu] *= -eps;
+		makeNoise(noise[mu], std::sqrt(2.0 * eps / beta));
 	}
 
 	// evolve U' = exp(force + noise) U
@@ -82,8 +82,8 @@ void Langevin::evolveStepImproved(double eps, double beta)
 	{
 		Field tmp(grid);
 		wilsonDeriv(tmp, Uprime, mu);
-		force[mu] = 0.5 * (force[mu] - (eps * beta) * tmp) -
-		            (eps * eps * beta * Nc / 6.0) * tmp;
+		force[mu] =
+		    0.5 * (force[mu] - eps * tmp) - (eps * eps / beta * Nc / 6.0) * tmp;
 	}
 
 	// evolve U = exp(force' + noise) U
@@ -115,8 +115,8 @@ void Langevin::evolveStepBauer(double eps, double beta)
 	for (int mu = 0; mu < 4; ++mu)
 	{
 		wilsonDeriv(force, U, mu);
-		force *= (eps * beta) * k1;
-		makeNoise(noise[mu], std::sqrt(2.0 * eps));
+		force *= eps * k1;
+		makeNoise(noise[mu], std::sqrt(2.0 * eps / beta));
 
 		force += k2 * noise[mu];
 		Uprime[mu] = expMat(force, 1.0) * U[mu];
@@ -127,7 +127,7 @@ void Langevin::evolveStepBauer(double eps, double beta)
 	for (int mu = 0; mu < 4; ++mu)
 	{
 		wilsonDeriv(force, Uprime, mu);
-		force *= beta * eps * k4 + beta * eps * eps * Nc * k5;
+		force *= eps * k4 + eps * eps / beta * Nc * k5;
 		force += k6 * noise[mu];
 		U[mu] = expMat(force, -1.0) * U[mu];
 	}
