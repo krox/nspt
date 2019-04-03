@@ -1,144 +1,147 @@
 #include "Grid/Grid.h"
 
+#include "util/json.hpp"
+
+#include "util/CLI11.hpp"
 #include "util/gnuplot.h"
+#include "util/hdf5.h"
+#include "util/stopwatch.h"
+#include "util/vector2d.h"
+#include <experimental/filesystem>
 #include <fmt/format.h>
 
-using namespace std;
+#include "nspt/grid_utils.h"
+#include "nspt/langevin.h"
+#include "nspt/pqcd.h"
+
 using namespace Grid;
-using namespace Grid::QCD;
+using Grid::QCD::SpaceTimeGrid;
+using namespace Grid::pQCD;
+using namespace util;
 
 #include "nspt/wilson.h"
 
-using namespace util;
-
-/** Langevin evolution for (quenched) SU(3) lattice theory */
-class Langevin
-{
-  public:
-	GridCartesian *grid;
-	GridRedBlackCartesian *rbGrid;
-	GridParallelRNG pRNG;
-	GridSerialRNG sRNG;
-
-	// gauge config
-	std::array<LatticeColourMatrix, 4> U;
-
-	// temporaries
-	std::array<LatticeColourMatrix, 4> force, force2;
-	LatticeColourMatrix Umu, drift, rot, tmp1, tmp2;
-
-	/** NOTE: does not initialize gauge field */
-	Langevin(std::vector<int> latt)
-	    : grid(SpaceTimeGrid::makeFourDimGrid(
-	          latt, GridDefaultSimd(Nd, vComplex::Nsimd()), GridDefaultMpi())),
-	      rbGrid(SpaceTimeGrid::makeFourDimRedBlackGrid(grid)),
-	      pRNG(grid), U{LatticeColourMatrix(grid), LatticeColourMatrix(grid),
-	                    LatticeColourMatrix(grid), LatticeColourMatrix(grid)},
-	      force{LatticeColourMatrix(grid), LatticeColourMatrix(grid),
-	            LatticeColourMatrix(grid), LatticeColourMatrix(grid)},
-	      force2{LatticeColourMatrix(grid), LatticeColourMatrix(grid),
-	             LatticeColourMatrix(grid), LatticeColourMatrix(grid)},
-	      Umu(grid), drift(grid), rot(grid), tmp1(grid), tmp2(grid)
-	{
-		std::vector<int> pseeds({1, 2, 3, 4, 5});
-		std::vector<int> sseeds({6, 7, 8, 9, 10});
-		pRNG.SeedFixedIntegers(pseeds);
-		sRNG.SeedFixedIntegers(sseeds);
-	}
-
-	void makeNoise(LatticeColourMatrix &out, double eps)
-	{
-		// this iscorrect for abelian groups
-		SU3::GaussianFundamentalLieAlgebraMatrix(pRNG, out, eps);
-
-		// naive improvement (works, but seems not significant)
-		// Idea: split eps in two parts, and use BCH formula to multiply
-		/*SU3::GaussianFundamentalLieAlgebraMatrix(pRNG, tmp1,
-		                                         std::sqrt(0.5) * eps);
-		SU3::GaussianFundamentalLieAlgebraMatrix(pRNG, tmp2,
-		                                         std::sqrt(0.5) * eps);
-		out = tmp1 + tmp2 + 0.5 * (tmp1 * tmp2 - tmp2 * tmp1);*/
-	}
-
-	/** 1st order method (forward Euler) */
-	void evolveStep(RealD beta, double eps)
-	{
-		// force at t=0
-		for (int mu = 0; mu < 4; ++mu)
-			wilsonDeriv(force[mu], U, mu);
-
-		// evolve with force + drift to t=eps
-		for (int mu = 0; mu < Nd; ++mu)
-		{
-			makeNoise(drift, std::sqrt(2.0 * eps));
-			drift += (-eps * beta) * force[mu];
-			SU3::taExp(drift, rot);
-			U[mu] = rot * U[mu];
-		}
-
-		// ProjectOnGroup(U);
-	}
-
-	/** second order method (Heun method) */
-	void evolveStepImproved(RealD beta, double eps)
-	{
-		// force at t=0
-		for (int mu = 0; mu < 4; ++mu)
-			wilsonDeriv(force[mu], U, mu);
-
-		// evolve with force + drift to t=eps
-		for (int mu = 0; mu < Nd; ++mu)
-		{
-			makeNoise(drift, std::sqrt(2.0 * eps));
-			drift += (-eps * beta) * force[mu];
-			SU3::taExp(drift, rot);
-			U[mu] = rot * U[mu];
-		}
-
-		// force at new point
-		for (int mu = 0; mu < 4; ++mu)
-			wilsonDeriv(force2[mu], U, mu);
-
-		// correct to 0.5*(force + force2)
-		for (int mu = 0; mu < Nd; ++mu)
-		{
-			drift = (-eps * beta * 0.5) * (force2[mu] - force[mu]);
-			SU3::taExp(drift, rot);
-			U[mu] = rot * U[mu];
-		}
-
-		// ProjectOnGroup(U);
-	}
-};
+using namespace nlohmann;
 
 int main(int argc, char **argv)
 {
-	Grid_init(&argc, &argv);
-
-	auto lang = Langevin(GridDefaultLatt());
-
-	auto plot = Gnuplot();
-	plot.style = "lines";
-
+	// parameters
+	int count = 400;
+	int discard = 0;
+	double eps = 0.05;
 	double beta = 6.0;
-	double maxT = 10.0;
 
-	for (double eps = 0.1; eps > 0.01; eps /= 2.0)
+	int improvement = 1;
+	int reunit = 1;
+
+	int doPlot = 0;
+	int seed = -1;
+	int verbosity = 1;
+
+	std::string filename;
+	std::string dummy; // ignore options that go directly to grid
+	CLI::App app{"NSPT for SU(3) lattice gauge theory"};
+	app.add_option("--grid", dummy, "lattice size (e.g. '8.8.8.8')");
+	app.add_option("--count", count, "number of configs to generate");
+	app.add_option("--discard", discard, "thermalization");
+	app.add_option("--eps", eps, "stepsize for integration");
+	app.add_option("--beta", beta, "(inverse) coupling");
+	app.add_option("--improvement", improvement, "use improved integrator");
+	app.add_option("--reunit", reunit, "explicitly project onto group");
+	app.add_option("--threads", dummy);
+	app.add_option("--plot", doPlot, "show a plot (requires Gnuplot)");
+	app.add_option("--filename", filename, "output file (json format)");
+	app.add_option("--seed", seed, "seed for rng (default = unpredictable)");
+	app.add_option("--verbosity", verbosity, "verbosity (default = 1)");
+	CLI11_PARSE(app, argc, argv);
+
+	if (filename != "" && std::experimental::filesystem::exists(filename))
 	{
-		std::vector<double> xs, ys;
-
-		lang.U[0] = 1.0;
-		lang.U[1] = 1.0;
-		lang.U[2] = 1.0;
-		lang.U[3] = 1.0;
-		for (double t = 0.0; t < maxT; t += eps)
-		{
-			xs.push_back(t);
-			ys.push_back(avgPlaquette(lang.U));
-			lang.evolveStepImproved(beta, eps);
-		}
-		plot.plotData(xs, ys, fmt::format("eps = {}", eps));
+		fmt::print("{} already exists. skipping.\n", filename);
+		return 0;
 	}
+
+	if (filename != "" && filename.find(".h5") == std::string::npos)
+	{
+		fmt::print("ERROR: unrecognized file ending: {}\n", filename);
+		return -1;
+	}
+
+	Grid_init(&argc, &argv);
+	std::vector<int> geom = GridDefaultLatt();
+
+	fmt::print("L = {}, beta = {} eps = {}, maxt = {}\n", geom[0], beta, eps,
+	           (count + discard) * eps);
+
+	// data
+	if (seed == -1)
+		seed = std::random_device()();
+	auto lang = Langevin(geom, seed);
+	std::vector<double> ts;
+	std::vector<double> plaq;
+
+	// performance measure
+	Stopwatch swEvolve, swMeasure;
+
+	// evolve it some time
+	for (int k = -discard; k < count; ++k)
+	{
+		// step 1: langevin evolution
+		swEvolve.start();
+		if (improvement == 0)
+			lang.evolveStep(eps, beta);
+		else if (improvement == 1)
+			lang.evolveStepImproved(eps, beta);
+		else if (improvement == 2)
+			lang.evolveStepBauer(eps, beta);
+		else
+			assert(false);
+		swEvolve.stop();
+
+		if (reunit)
+			for (int mu = 0; mu < 4; ++mu)
+				ProjectOnGroup(lang.U[mu]);
+
+		// step 2: measurements
+		swMeasure.start();
+
+		double t = (k + discard + 1) * eps; // Langevin time
+		double p = avgPlaquette(lang.U);    // plaquette
+
+		if (verbosity >= 2 || (verbosity >= 1 && k % 10 == 0))
+			fmt::print("k = {}/{} t = {}, plaq = {:.5}\n", k, count, t, p);
+
+		if (k >= 0)
+		{
+			ts.push_back(t);
+			plaq.push_back(p);
+		}
+
+		swMeasure.stop();
+	}
+
+	if (filename != "")
+	{
+		fmt::print("writing results to '{}'\n", filename);
+
+		auto file = DataFile::create(filename);
+		file.setAttribute("geom", geom);
+		file.setAttribute("count", count);
+		file.setAttribute("discard", discard);
+		file.setAttribute("eps", eps);
+		file.setAttribute("beta", beta);
+		file.setAttribute("improvement", improvement);
+		file.setAttribute("reunit", reunit);
+
+		file.createData("ts", ts);
+		file.createData("plaq", plaq);
+	}
+
+	fmt::print("time for Langevin evolution: {}\n", swEvolve.secs());
+	fmt::print("time for measurments: {}\n", swMeasure.secs());
+
+	if (doPlot >= 1)
+		Gnuplot().style("lines").plotData(ts, plaq, "plaq");
 
 	Grid_finalize();
 }
