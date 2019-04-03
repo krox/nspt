@@ -1,5 +1,5 @@
-#ifndef NSPT_LANGEVIN_H
-#define NSPT_LANGEVIN_H
+#ifndef NSPT_NSPT_H
+#define NSPT_NSPT_H
 
 #include "Grid/Grid.h"
 
@@ -7,12 +7,14 @@
 #include "nspt/pqcd.h"
 
 /** Perturbative Langevin evolution for (quenched) SU(3) lattice theory */
-class Langevin
+class LangevinPert
 {
   public:
 	Grid::GridCartesian *grid;
 	Grid::GridParallelRNG pRNG;
 	Grid::GridSerialRNG sRNG;
+
+	bool flipNoise = false;
 
 	// Fields are expanded in beta^-0.5
 	using Field = Grid::pQCD::LatticeColourMatrixSeries;
@@ -25,7 +27,7 @@ class Langevin
 	std::array<Field, 4> Uprime;
 
 	// Set config to Unit
-	Langevin(std::vector<int> latt, int seed);
+	LangevinPert(std::vector<int> latt, int seed);
 
 	void makeNoise(FieldTerm &out, double eps);
 

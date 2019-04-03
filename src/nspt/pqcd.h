@@ -11,7 +11,7 @@ static const int Nd = 4; // space-time dimensions
 static const int Ns = 4; // spin-dimensions
 static const int Nc = 3; // number of colours
 #ifndef NSPT_ORDER
-#error Need to specify NSPT_ORDER as macro
+#define NSPT_ORDER 7
 #endif
 static const int No = NSPT_ORDER; // perturbative expansion
 
@@ -48,6 +48,7 @@ using iSpinColourVectorSeries =
 
 /** concrete tensor types (without SIMD) */
 
+typedef iSinglet<Integer> TInteger;
 typedef iSinglet<Real> TReal;
 typedef iSinglet<Complex> TComplex;
 typedef iSingletSeries<Real> RealSeries;
@@ -65,6 +66,7 @@ typedef iSpinColourVectorSeries<Complex> SpinColourVectorSeries;
 
 /** concrete tensor types (with SIMD) */
 
+typedef iSinglet<vInteger> vTInteger;
 typedef iSinglet<vReal> vTReal;
 typedef iSinglet<vComplex> vTComplex;
 typedef iSingletSeries<vReal> vRealSeries;
@@ -82,6 +84,7 @@ typedef iSpinColourVectorSeries<vComplex> vSpinColourVectorSeries;
 
 /** lattice versions of tensor types (with SIMD) */
 
+typedef Lattice<vTInteger> LatticeInteger;
 typedef Lattice<vTReal> LatticeReal;
 typedef Lattice<vTComplex> LatticeComplex;
 typedef Lattice<vRealSeries> LatticeRealSeries;

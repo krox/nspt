@@ -11,7 +11,7 @@
 #include <fmt/format.h>
 
 #include "nspt/grid_utils.h"
-#include "nspt/langevin.h"
+#include "nspt/nspt.h"
 #include "nspt/pqcd.h"
 
 using namespace Grid;
@@ -83,7 +83,7 @@ int main(int argc, char **argv)
 	// data
 	if (seed == -1)
 		seed = std::random_device()();
-	auto lang = Langevin(geom, seed);
+	auto lang = LangevinPert(geom, seed);
 	std::vector<double> ts;
 	vector2d<double> plaq;
 	AlgebraObservables algObs;

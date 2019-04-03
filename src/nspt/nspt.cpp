@@ -1,4 +1,4 @@
-#include "nspt/langevin.h"
+#include "nspt/nspt.h"
 
 using namespace Grid;
 using Grid::QCD::SpaceTimeGrid;
@@ -7,7 +7,7 @@ using namespace util;
 
 #include "nspt/wilson.h"
 
-Langevin::Langevin(std::vector<int> latt, int seed)
+LangevinPert::LangevinPert(std::vector<int> latt, int seed)
     : grid(SpaceTimeGrid::makeFourDimGrid(
           latt, GridDefaultSimd(Nd, vComplex::Nsimd()), GridDefaultMpi())),
       pRNG(grid), U{Field(grid), Field(grid), Field(grid), Field(grid)},
@@ -23,14 +23,16 @@ Langevin::Langevin(std::vector<int> latt, int seed)
 	sRNG.SeedFixedIntegers(sseeds);
 }
 
-void Langevin::makeNoise(LatticeColourMatrix &out, double eps)
+void LangevinPert::makeNoise(LatticeColourMatrix &out, double eps)
 {
 	gaussian(pRNG, out);
 	out *= eps * std::sqrt(0.5); // normalization of SU(3) generators
 	out = Ta(out);
+	if (flipNoise)
+		out = -out;
 }
 
-void Langevin::evolveStep(double eps)
+void LangevinPert::evolveStep(double eps)
 {
 	std::array<Field, 4> force{Field(grid), Field(grid), Field(grid),
 	                           Field(grid)};
@@ -58,7 +60,7 @@ void Langevin::evolveStep(double eps)
 		U[mu] = expMatFast(force[mu], 1.0) * U[mu];
 }
 
-void Langevin::evolveStepImproved(double eps)
+void LangevinPert::evolveStepImproved(double eps)
 {
 	std::array<Field, 4> force{Field(grid), Field(grid), Field(grid),
 	                           Field(grid)};
@@ -109,7 +111,7 @@ void Langevin::evolveStepImproved(double eps)
 	}
 }
 
-void Langevin::evolveStepBauer(double eps)
+void LangevinPert::evolveStepBauer(double eps)
 {
 	Field force{Field(grid)};
 	std::array<FieldTerm, 4> noise{FieldTerm(grid), FieldTerm(grid),
@@ -158,7 +160,7 @@ void Langevin::evolveStepBauer(double eps)
 	}
 }
 
-void Langevin::landauStep(double alpha)
+void LangevinPert::landauStep(double alpha)
 {
 	Field R(grid);
 
@@ -184,7 +186,7 @@ void Langevin::landauStep(double alpha)
 		U[mu] = R * U[mu] * Cshift(adj(R), mu, 1);
 }
 
-std::array<Langevin::Field, 4> Langevin::algebra()
+std::array<LangevinPert::Field, 4> LangevinPert::algebra()
 {
 	std::array<Field, 4> A{Field(grid), Field(grid), Field(grid), Field(grid)};
 	for (int mu = 0; mu < 4; ++mu)
@@ -192,7 +194,7 @@ std::array<Langevin::Field, 4> Langevin::algebra()
 	return A;
 }
 
-void Langevin::zmreg(bool reunit)
+void LangevinPert::zmreg(bool reunit)
 {
 	Field A{grid};
 	for (int mu = 0; mu < 4; ++mu)
