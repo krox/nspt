@@ -7,7 +7,6 @@
 #include "util/hdf5.h"
 #include "util/stopwatch.h"
 #include "util/vector2d.h"
-#include <experimental/filesystem>
 #include <fmt/format.h>
 
 #include "nspt/grid_utils.h"
@@ -49,34 +48,39 @@ int main(int argc, char **argv)
 	app.add_option("--improvement", improvement, "use improved integrator");
 	app.add_option("--reunit", reunit, "explicitly project onto group");
 	app.add_option("--threads", dummy);
+	app.add_option("--mpi", dummy);
 	app.add_option("--plot", doPlot, "show a plot (requires Gnuplot)");
 	app.add_option("--filename", filename, "output file (json format)");
 	app.add_option("--seed", seed, "seed for rng (default = unpredictable)");
 	app.add_option("--verbosity", verbosity, "verbosity (default = 1)");
 	CLI11_PARSE(app, argc, argv);
 
-	if (filename != "" && std::experimental::filesystem::exists(filename))
+	if (filename != "" && fileExists(filename))
 	{
-		fmt::print("{} already exists. skipping.\n", filename);
+		if (primaryTask())
+			fmt::print("{} already exists. skipping.\n", filename);
 		return 0;
 	}
 
 	if (filename != "" && filename.find(".h5") == std::string::npos)
 	{
-		fmt::print("ERROR: unrecognized file ending: {}\n", filename);
+		if (primaryTask())
+			fmt::print("ERROR: unrecognized file ending: {}\n", filename);
 		return -1;
 	}
 
 	Grid_init(&argc, &argv);
 	std::vector<int> geom = GridDefaultLatt();
 
-	fmt::print("L = {}, beta = {} eps = {}, maxt = {}\n", geom[0], beta, eps,
-	           (count + discard) * eps);
+	if (primaryTask())
+		fmt::print("L = {}, beta = {} eps = {}, maxt = {}\n", geom[0], beta,
+		           eps, (count + discard) * eps);
 
 	// data
 	if (seed == -1)
 		seed = std::random_device()();
 	auto lang = Langevin(geom, seed);
+	lang.U[0]._grid->show_decomposition();
 	std::vector<double> ts;
 	std::vector<double> plaq;
 
@@ -108,8 +112,9 @@ int main(int argc, char **argv)
 		double t = (k + discard + 1) * eps; // Langevin time
 		double p = avgPlaquette(lang.U);    // plaquette
 
-		if (verbosity >= 2 || (verbosity >= 1 && k % 10 == 0))
-			fmt::print("k = {}/{} t = {}, plaq = {:.5}\n", k, count, t, p);
+		if (primaryTask())
+			if (verbosity >= 2 || (verbosity >= 1 && k % 10 == 0))
+				fmt::print("k = {}/{} t = {}, plaq = {:.5}\n", k, count, t, p);
 
 		if (k >= 0)
 		{
@@ -120,28 +125,31 @@ int main(int argc, char **argv)
 		swMeasure.stop();
 	}
 
-	if (filename != "")
+	if (primaryTask())
 	{
-		fmt::print("writing results to '{}'\n", filename);
+		if (filename != "")
+		{
+			fmt::print("writing results to '{}'\n", filename);
 
-		auto file = DataFile::create(filename);
-		file.setAttribute("geom", geom);
-		file.setAttribute("count", count);
-		file.setAttribute("discard", discard);
-		file.setAttribute("eps", eps);
-		file.setAttribute("beta", beta);
-		file.setAttribute("improvement", improvement);
-		file.setAttribute("reunit", reunit);
+			auto file = DataFile::create(filename);
+			file.setAttribute("geom", geom);
+			file.setAttribute("count", count);
+			file.setAttribute("discard", discard);
+			file.setAttribute("eps", eps);
+			file.setAttribute("beta", beta);
+			file.setAttribute("improvement", improvement);
+			file.setAttribute("reunit", reunit);
 
-		file.createData("ts", ts);
-		file.createData("plaq", plaq);
+			file.createData("ts", ts);
+			file.createData("plaq", plaq);
+		}
+
+		fmt::print("time for Langevin evolution: {}\n", swEvolve.secs());
+		fmt::print("time for measurments: {}\n", swMeasure.secs());
+
+		if (doPlot >= 1)
+			Gnuplot().style("lines").plotData(ts, plaq, "plaq");
 	}
-
-	fmt::print("time for Langevin evolution: {}\n", swEvolve.secs());
-	fmt::print("time for measurments: {}\n", swMeasure.secs());
-
-	if (doPlot >= 1)
-		Gnuplot().style("lines").plotData(ts, plaq, "plaq");
 
 	Grid_finalize();
 }

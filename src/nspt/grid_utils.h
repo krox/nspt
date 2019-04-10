@@ -11,6 +11,20 @@
 #include "util/span.h"
 #include <complex>
 #include <fmt/format.h>
+#include <sys/stat.h>
+
+/** determine if this is the primary MPI task */
+inline bool primaryTask()
+{
+	return Grid::CartesianCommunicator::RankWorld() == 0;
+}
+
+/** check if a file exists */
+inline bool fileExists(const std::string &name)
+{
+	struct stat buffer;
+	return stat(name.c_str(), &buffer) == 0;
+}
 
 namespace Grid {
 

@@ -7,7 +7,6 @@
 #include "util/hdf5.h"
 #include "util/stopwatch.h"
 #include "util/vector2d.h"
-#include <experimental/filesystem>
 #include <fmt/format.h>
 
 #include "nspt/grid_utils.h"
@@ -53,6 +52,7 @@ int main(int argc, char **argv)
 	app.add_option("--zmreg", zmreg, "explicitly remove zero modes");
 	app.add_option("--reunit", reunit, "explicitly project onto group/algebra");
 	app.add_option("--threads", dummy);
+	app.add_option("--mpi", dummy);
 	app.add_option("--plot", doPlot, "show a plot (requires Gnuplot)");
 	app.add_flag("--plot-separate", plotSeparate, "plot orders separately");
 	app.add_option("--filename", filename, "output file (json format)");
@@ -60,30 +60,32 @@ int main(int argc, char **argv)
 	app.add_option("--verbosity", verbosity, "verbosity (default = 1)");
 	CLI11_PARSE(app, argc, argv);
 
-	if (filename != "" && std::experimental::filesystem::exists(filename))
+	if (filename != "" && fileExists(filename))
 	{
-		fmt::print("{} already exists. skipping.\n", filename);
+		if (primaryTask())
+			fmt::print("{} already exists. skipping.\n", filename);
 		return 0;
 	}
 
-	if (filename != "")
-		if (filename.find(".json") == std::string::npos &&
-		    filename.find(".h5") == std::string::npos)
-		{
+	if (filename != "" && filename.find(".h5") == std::string::npos)
+	{
+		if (primaryTask())
 			fmt::print("ERROR: unrecognized file ending: {}\n", filename);
-			return -1;
-		}
+		return -1;
+	}
 
 	Grid_init(&argc, &argv);
 	std::vector<int> geom = GridDefaultLatt();
 
-	fmt::print("L = {}, eps = {}, maxt = {}\n", geom[0], eps,
-	           (count + discard) * eps);
+	if (primaryTask())
+		fmt::print("L = {}, eps = {}, maxt = {}\n", geom[0], eps,
+		           (count + discard) * eps);
 
 	// data
 	if (seed == -1)
 		seed = std::random_device()();
 	auto lang = LangevinPert(geom, seed);
+	lang.U[0]._grid->show_decomposition();
 	std::vector<double> ts;
 	vector2d<double> plaq;
 	AlgebraObservables algObs;
@@ -132,7 +134,8 @@ int main(int argc, char **argv)
 
 		if (verbosity >= 2 || (verbosity >= 1 && k % 10 == 0))
 		{
-			fmt::print("k = {}/{} t = {}, plaq = {:.5}\n", k, count, t, p);
+			if (primaryTask())
+				fmt::print("k = {}/{} t = {}, plaq = {:.5}\n", k, count, t, p);
 			lastPrint = t;
 		}
 
@@ -148,77 +151,52 @@ int main(int argc, char **argv)
 		swMeasure.stop();
 	}
 
-	if (filename != "")
-		fmt::print("writing results to '{}'\n", filename);
-
-	if (filename != "" && filename.find(".json") != std::string::npos)
+	if (primaryTask())
 	{
-		json jsonParams;
-		jsonParams["order"] = No;
-		jsonParams["geom"] = geom;
-		jsonParams["count"] = count;
-		jsonParams["discard"] = discard;
-		jsonParams["eps"] = eps;
-		jsonParams["improvement"] = improvement;
-		jsonParams["gaugefix"] = gaugefix;
-		jsonParams["zmreg"] = zmreg;
-		jsonParams["reunit"] = reunit;
+		if (filename != "")
+		{
+			fmt::print("writing results to '{}'\n", filename);
 
-		json jsonOut;
-		jsonOut["params"] = jsonParams;
-		jsonOut["ts"] = ts;
-		jsonOut["plaq"] = plaq;
-		jsonOut["traceA"] = algObs.traceA;
-		jsonOut["hermA"] = algObs.hermA;
-		jsonOut["normA"] = algObs.normA;
-		jsonOut["gaugeCond"] = algObs.gaugeCond;
-		jsonOut["avgAx"] = algObs.avgAx;
-		jsonOut["avgAy"] = algObs.avgAy;
-		jsonOut["avgAz"] = algObs.avgAz;
-		jsonOut["avgAt"] = algObs.avgAt;
-		std::ofstream(filename) << jsonOut.dump(2) << std::endl;
+			auto file = DataFile::create(filename);
+			file.setAttribute("order", No);
+			file.setAttribute("geom", geom);
+			file.setAttribute("count", count);
+			file.setAttribute("discard", discard);
+			file.setAttribute("eps", eps);
+			file.setAttribute("improvement", improvement);
+			file.setAttribute("gaugefix", gaugefix);
+			file.setAttribute("zmreg", zmreg);
+			file.setAttribute("reunit", reunit);
+
+			file.createData("ts", ts);
+			file.createData("plaq", plaq);
+			file.createData("traceA", algObs.traceA);
+			file.createData("hermA", algObs.hermA);
+			file.createData("normA", algObs.normA);
+			file.createData("gaugeCond", algObs.gaugeCond);
+			file.createData("avgAx", algObs.avgAx);
+			file.createData("avgAy", algObs.avgAy);
+			file.createData("avgAz", algObs.avgAz);
+			file.createData("avgAt", algObs.avgAt);
+		}
+
+		fmt::print("time for Langevin evolution: {}\n", swEvolve.secs());
+		fmt::print("time for Landau gaugefix: {}\n", swLandau.secs());
+		fmt::print("time for ZM regularization: {}\n", swZmreg.secs());
+		fmt::print("time for measurments: {}\n", swMeasure.secs());
+
+		if (doPlot >= 1)
+		{
+			if (plotSeparate)
+				for (int i = 2; i < No; i += 2)
+					Gnuplot().style("lines").plotData(
+					    ts, plaq.col(i), fmt::format("plaq[{}]", i));
+			else
+				Gnuplot().style("lines").plotData(ts, plaq, "plaq");
+		}
+		if (doPlot >= 2)
+			algObs.plot(ts);
 	}
-	else if (filename != "" && filename.find(".h5") != std::string::npos)
-	{
-		auto file = DataFile::create(filename);
-		file.setAttribute("order", No);
-		file.setAttribute("geom", geom);
-		file.setAttribute("count", count);
-		file.setAttribute("discard", discard);
-		file.setAttribute("eps", eps);
-		file.setAttribute("improvement", improvement);
-		file.setAttribute("gaugefix", gaugefix);
-		file.setAttribute("zmreg", zmreg);
-		file.setAttribute("reunit", reunit);
-
-		file.createData("ts", ts);
-		file.createData("plaq", plaq);
-		file.createData("traceA", algObs.traceA);
-		file.createData("hermA", algObs.hermA);
-		file.createData("normA", algObs.normA);
-		file.createData("gaugeCond", algObs.gaugeCond);
-		file.createData("avgAx", algObs.avgAx);
-		file.createData("avgAy", algObs.avgAy);
-		file.createData("avgAz", algObs.avgAz);
-		file.createData("avgAt", algObs.avgAt);
-	}
-
-	fmt::print("time for Langevin evolution: {}\n", swEvolve.secs());
-	fmt::print("time for Landau gaugefix: {}\n", swLandau.secs());
-	fmt::print("time for ZM regularization: {}\n", swZmreg.secs());
-	fmt::print("time for measurments: {}\n", swMeasure.secs());
-
-	if (doPlot >= 1)
-	{
-		if (plotSeparate)
-			for (int i = 2; i < No; i += 2)
-				Gnuplot().style("lines").plotData(ts, plaq.col(i),
-				                                  fmt::format("plaq[{}]", i));
-		else
-			Gnuplot().style("lines").plotData(ts, plaq, "plaq");
-	}
-	if (doPlot >= 2)
-		algObs.plot(ts);
 
 	Grid_finalize();
 }

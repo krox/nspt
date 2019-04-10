@@ -64,8 +64,6 @@ void LangevinPert::evolveStepImproved(double eps)
 {
 	std::array<Field, 4> force{Field(grid), Field(grid), Field(grid),
 	                           Field(grid)};
-	/*std::array<Field, 4> force2{Field(grid), Field(grid), Field(grid),
-	                            Field(grid)};*/
 	std::array<FieldTerm, 4> noise{FieldTerm(grid), FieldTerm(grid),
 	                               FieldTerm(grid), FieldTerm(grid)};
 
@@ -177,7 +175,7 @@ void LangevinPert::landauStep(double alpha)
 	}
 
 	/** NOTE: without this projection, the non-anti-hermitian part of A will
-	 * grow exponentially in time */
+	 * grow exponentially in time if no reunitization is done. */
 	R = Ta(R);
 
 	R = expMatFast(R, -alpha);
@@ -201,13 +199,7 @@ void LangevinPert::zmreg(bool reunit)
 	{
 		A = logMatFast(U[mu]);
 		ColourMatrixSeries avg = sum(A) * (1.0 / A._grid->gSites());
-
-		// A[i] = A[i] - avg; // This doesn't compile (FIXME)
-		std::vector<ColourMatrixSeries> tmp;
-		unvectorizeToLexOrdArray(tmp, A);
-		for (auto &x : tmp)
-			x -= avg;
-		vectorizeFromLexOrdArray(tmp, A);
+		A = A - avg;
 
 		if (reunit)
 			A = Ta(A);
