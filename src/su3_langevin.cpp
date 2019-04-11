@@ -29,6 +29,7 @@ int main(int argc, char **argv)
 	int discard = 0;
 	double eps = 0.05;
 	double beta = 6.0;
+	bool hotStart = false;
 
 	int improvement = 1;
 	int reunit = 1;
@@ -53,6 +54,7 @@ int main(int argc, char **argv)
 	app.add_option("--filename", filename, "output file (json format)");
 	app.add_option("--seed", seed, "seed for rng (default = unpredictable)");
 	app.add_option("--verbosity", verbosity, "verbosity (default = 1)");
+	app.add_flag("--hot", hotStart, "random start (independant of seed!)");
 	CLI11_PARSE(app, argc, argv);
 
 	if (filename != "" && fileExists(filename))
@@ -80,6 +82,21 @@ int main(int argc, char **argv)
 	if (seed == -1)
 		seed = std::random_device()();
 	auto lang = Langevin(geom, seed);
+	if (hotStart)
+	{
+		Langevin::Field drift(lang.grid);
+		Grid::GridParallelRNG pRNG(lang.grid);
+		std::vector<int> ps;
+		for (int i = 0; i < 4; ++i)
+			ps.push_back((int)std::random_device()());
+		pRNG.SeedFixedIntegers(ps);
+		for (int mu = 0; mu < 4; ++mu)
+		{
+			gaussian(pRNG, drift);
+			drift = Ta(drift);
+			lang.U[mu] = expMat(drift, 1.0) * lang.U[mu];
+		}
+	}
 	lang.U[0]._grid->show_decomposition();
 	std::vector<double> ts;
 	std::vector<double> plaq;
