@@ -154,7 +154,8 @@ void MLangevin::run(Environment &env)
 
 		// some logging
 		if ((i + 1) % 10 == 0)
-			fmt::print("k = {}/{}, plaq = {}\n", i + 1, params.count, p);
+			if (primaryTask())
+				fmt::print("k = {}/{}, plaq = {}\n", i + 1, params.count, p);
 	}
 
 	if (primaryTask() && params.filename != "")

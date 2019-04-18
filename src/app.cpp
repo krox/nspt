@@ -54,17 +54,23 @@ int main(int argc, char **argv)
 		swModules[i].start();
 		modules[i]->run(env);
 		swModules[i].stop();
-		fmt::print("time for {}: {}\n", modules[i]->name(),
-		           swModules[i].secs());
+		if (primaryTask())
+			fmt::print("time for {}: {}\n", modules[i]->name(),
+			           swModules[i].secs());
 	}
+	if (primaryTask())
+		fmt::print("==================== Summary ====================\n");
 
-	fmt::print("==================== Summary ====================\n");
-	Grid::Grid_finalize();
 	swTotal.stop();
 
-	for (size_t i = 0; i < modules.size(); ++i)
-		fmt::print("{}: {} secs ({:.2f} %)\n", modules[i]->name(),
-		           swModules[i].secs(),
-		           swModules[i].secs() / swTotal.secs() * 100.0);
-	fmt::print("total: {} secs\n", swTotal.secs());
+	if (primaryTask())
+	{
+		for (size_t i = 0; i < modules.size(); ++i)
+			fmt::print("{}: {} secs ({:.2f} %)\n", modules[i]->name(),
+			           swModules[i].secs(),
+			           swModules[i].secs() / swTotal.secs() * 100.0);
+		fmt::print("total: {} secs\n", swTotal.secs());
+	}
+
+	Grid::Grid_finalize();
 }
