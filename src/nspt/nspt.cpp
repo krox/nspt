@@ -7,6 +7,46 @@ using namespace util;
 
 #include "nspt/wilson.h"
 
+using Field = LatticeColourMatrixSeries;
+using FieldTerm = LatticeColourMatrix;
+
+/** compute V = exp(aX +bY<<1))U. aliasing is allowed */
+static void evolve(Field &V, double a, const Field &X, double b,
+                   const FieldTerm &Y, const Field &U)
+{
+	assert(No >= 2);
+	conformable(V._grid, X._grid);
+	conformable(V._grid, Y._grid);
+	conformable(V._grid, U._grid);
+
+	parallel_for(int ss = 0; ss < V._grid->oSites(); ss++)
+	{
+		vColourMatrixSeries tmp = a * X._odata[ss];
+		tmp()()(1) += b * Y._odata[ss]()()();
+		V._odata[ss] = ExponentiateFast(tmp, 1.0) * U._odata[ss];
+	}
+}
+
+/** compute V = exp(aX +bY<<2 + cZ<<4))U. aliasing is allowed */
+static void evolve(Field &V, double a, const Field &X, double b,
+                   const FieldTerm &Y, double c, const Field &Z, const Field &U)
+{
+	assert(No >= 2);
+	conformable(V._grid, X._grid);
+	conformable(V._grid, Y._grid);
+	conformable(V._grid, Z._grid);
+	conformable(V._grid, U._grid);
+
+	parallel_for(int ss = 0; ss < V._grid->oSites(); ss++)
+	{
+		vColourMatrixSeries tmp = a * X._odata[ss];
+		tmp()()(1) += b * Y._odata[ss]()()();
+		for (int i = 2; i < No; ++i)
+			tmp()()(i) += c * Z._odata[ss]()()(i - 2);
+		V._odata[ss] = ExponentiateFast(tmp, 1.0) * U._odata[ss];
+	}
+}
+
 LangevinPert::LangevinPert(std::vector<int> latt, int seed)
     : grid(SpaceTimeGrid::makeFourDimGrid(
           latt, GridDefaultSimd(Nd, vComplex::Nsimd()), GridDefaultMpi())),
@@ -23,10 +63,11 @@ LangevinPert::LangevinPert(std::vector<int> latt, int seed)
 	sRNG.SeedFixedIntegers(sseeds);
 }
 
-void LangevinPert::makeNoise(LatticeColourMatrix &out, double eps)
+/** generate gaussian noise with <eta^2> = 2 */
+void LangevinPert::makeNoise(LatticeColourMatrix &out)
 {
+	// TODO: really check that this produces the correct normalization
 	gaussian(pRNG, out);
-	out *= eps * std::sqrt(0.5); // normalization of SU(3) generators
 	out = Ta(out);
 	if (flipNoise)
 		out = -out;
@@ -36,28 +77,19 @@ void LangevinPert::evolveStep(double eps)
 {
 	std::array<Field, 4> force{Field(grid), Field(grid), Field(grid),
 	                           Field(grid)};
+	std::array<FieldTerm, 4> noise{FieldTerm(grid), FieldTerm(grid),
+	                               FieldTerm(grid), FieldTerm(grid)};
 
-	// build force term: F = -eps*D(S) + sqrt(eps) * beta^-1/2 * eta
-
+	// compute noise and force at U
 	for (int mu = 0; mu < 4; ++mu)
 	{
-		// NOTE: this seems to be the performance bottleneck. Not the
-		//       "exp(F)" below
+		makeNoise(noise[mu]);
 		wilsonDeriv(force[mu], U, mu);
-		force[mu] *= -eps;
-
-		LatticeColourMatrix drift(grid);
-		makeNoise(drift, std::sqrt(2.0 * eps));
-
-		// noise enters the force at order beta^-1/2
-		LatticeColourMatrix tmp = peekSeries(force[mu], 1);
-		tmp += drift;
-		pokeSeries(force[mu], tmp, 1);
 	}
 
 	// evolve U = exp(F) U
 	for (int mu = 0; mu < 4; ++mu)
-		U[mu] = expMatFast(force[mu], 1.0) * U[mu];
+		evolve(U[mu], -eps, force[mu], std::sqrt(eps), noise[mu], U[mu]);
 }
 
 void LangevinPert::evolveStepImproved(double eps)
@@ -67,45 +99,22 @@ void LangevinPert::evolveStepImproved(double eps)
 	std::array<FieldTerm, 4> noise{FieldTerm(grid), FieldTerm(grid),
 	                               FieldTerm(grid), FieldTerm(grid)};
 
-	// compute force and noise at U
+	// compute noise and force at U and evolve U' = exp(F) U
 	for (int mu = 0; mu < 4; ++mu)
 	{
+		makeNoise(noise[mu]);
 		wilsonDeriv(force[mu], U, mu);
-		force[mu] *= -eps;
-		makeNoise(noise[mu], std::sqrt(2.0 * eps));
+		evolve(Uprime[mu], -eps, force[mu], std::sqrt(eps), noise[mu], U[mu]);
 	}
 
-	// evolve U' = exp(force + noise) U
-	for (int mu = 0; mu < 4; ++mu)
-	{
-		// noise enters the force at order beta^-1/2
-		Field tmp = force[mu];
-		LatticeColourMatrix tmp2 = peekSeries(tmp, 1);
-		tmp2 += noise[mu];
-		pokeSeries(tmp, tmp2, 1);
-
-		Uprime[mu] = expMatFast(tmp, 1.0) * U[mu];
-	}
-
-	// build improved force
+	// compute force at U' and evolve U = exp(F') U
 	for (int mu = 0; mu < 4; ++mu)
 	{
 		Field tmp(grid);
 		wilsonDeriv(tmp, Uprime, mu);
-		force[mu] = 0.5 * (force[mu] - eps * tmp) -
-		            (eps * eps * Nc / 6.0) * shiftSeries(tmp, 2);
-	}
-
-	// evolve U = exp(force' + noise) U
-	for (int mu = 0; mu < 4; ++mu)
-	{
-		// noise enters the force at order beta^-1/2
-		Field tmp = force[mu];
-		LatticeColourMatrix tmp2 = peekSeries(tmp, 1);
-		tmp2 += noise[mu];
-		pokeSeries(tmp, tmp2, 1);
-
-		U[mu] = expMatFast(tmp, 1.0) * U[mu];
+		force[mu] += tmp;
+		evolve(U[mu], -eps * 0.5, force[mu], std::sqrt(eps), noise[mu],
+		       -eps * eps * Nc / 6.0, tmp, U[mu]);
 	}
 }
 
@@ -115,46 +124,26 @@ void LangevinPert::evolveStepBauer(double eps)
 	std::array<FieldTerm, 4> noise{FieldTerm(grid), FieldTerm(grid),
 	                               FieldTerm(grid), FieldTerm(grid)};
 
-	/** constant names as in https://arxiv.org/pdf/1303.3279.pdf */
-	double k1 = (-3.0 + 2.0 * std::sqrt(2.0)) / 2.0;
-	double k2 = (-2.0 + std::sqrt(2.0)) / 2.0;
-	// double k3 = 0.0;
-	double k4 = 1.0;
-	double k5 = (5.0 - 3.0 * std::sqrt(2.0)) / 12.0;
-	double k6 = 1.0;
+	/** see https://arxiv.org/pdf/1303.3279.pdf (up to signs) */
+	constexpr double k1 = 0.08578643762690485; // (2 sqrt(2) - 3) / 2;
+	constexpr double k2 = 0.2928932188134524;  // (sqrt(2) - 2) / 2;
+	constexpr double k5 = 0.06311327607339286; // (5 - 3 * sqrt(2)) / 12;
 
-	// compute force and noise at U
-	// evolve U' = exp(force + noise) U
+	// compute noise and force at U and evolve U' = exp(F) U
 	for (int mu = 0; mu < 4; ++mu)
 	{
+		makeNoise(noise[mu]);
 		wilsonDeriv(force, U, mu);
-		force *= eps * k1;
-		makeNoise(noise[mu], std::sqrt(2.0 * eps));
-
-		// noise enters the force at order beta^-1/2
-		LatticeColourMatrix tmp2 = peekSeries(force, 1);
-		tmp2 += k2 * noise[mu];
-		pokeSeries(force, tmp2, 1);
-
-		Uprime[mu] = expMatFast(force, 1.0) * U[mu];
+		evolve(Uprime[mu], -eps * k1, force, std::sqrt(eps) * k2, noise[mu],
+		       U[mu]);
 	}
 
-	// compute force at U'
-	// evolve U = exp(force' + noise) U
+	// compute force at U' and evolve U = exp(F') U
 	for (int mu = 0; mu < 4; ++mu)
 	{
 		wilsonDeriv(force, Uprime, mu);
-		force *= eps * k4;
-
-		// the "C_A" term enters at beta^-1
-		force += (k5 * eps * Nc / k4) * shiftSeries(force, 2);
-
-		// noise enters the force at order beta^-1/2
-		LatticeColourMatrix tmp2 = peekSeries(force, 1);
-		tmp2 += k6 * noise[mu];
-		pokeSeries(force, tmp2, 1);
-
-		U[mu] = expMatFast(force, -1.0) * U[mu];
+		evolve(U[mu], -eps, force, std::sqrt(eps), noise[mu],
+		       -k5 * Nc * eps * eps, force, U[mu]);
 	}
 }
 

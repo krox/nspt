@@ -29,7 +29,7 @@ class LangevinPert
 	// Set config to Unit
 	LangevinPert(std::vector<int> latt, int seed);
 
-	void makeNoise(FieldTerm &out, double eps);
+	void makeNoise(FieldTerm &out);
 
 	/** one step of (gluonic) Langevin evolution */
 	void evolveStep(double eps);         // first-order Euler scheme

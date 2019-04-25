@@ -56,9 +56,9 @@ void stapleSum(Field &S, const std::array<Field, 4> &U, int mu)
 	{
 		if (mu == nu)
 			continue;
-		S += Cshift(U[nu], mu, 1) * adj(Cshift(U[mu], nu, 1)) * adj(U[nu]);
-		S += Cshift(Field(adj(Cshift(U[nu], mu, 1)) * adj(U[mu]) * U[nu]), nu,
-		            -1);
+		Field tmp = Cshift(U[nu], mu, 1);
+		S += tmp * adj(Cshift(U[mu], nu, 1)) * adj(U[nu]);
+		S += Cshift(Field(adj(tmp) * adj(U[mu]) * U[nu]), nu, -1);
 	}
 }
 
