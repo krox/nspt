@@ -82,7 +82,7 @@ template <typename T> class vector2d
 
 #ifdef NLOHMANN_JSON_HPP
 
-void to_json(nlohmann::json &j, const vector2d<double> &v)
+inline void to_json(nlohmann::json &j, const vector2d<double> &v)
 {
 	j = nlohmann::json::array();
 	for (size_t i = 0; i < v.height(); ++i)

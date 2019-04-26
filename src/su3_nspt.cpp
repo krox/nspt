@@ -10,6 +10,7 @@
 #include <fmt/format.h>
 
 #include "nspt/grid_utils.h"
+#include "nspt/integrator.h"
 #include "nspt/nspt.h"
 #include "nspt/pqcd.h"
 
@@ -25,6 +26,8 @@ using namespace nlohmann;
 
 int main(int argc, char **argv)
 {
+	using Field = LatticeColourMatrixSeries;
+
 	// parameters
 	int count = 400;
 	int discard = 0;
@@ -41,6 +44,8 @@ int main(int argc, char **argv)
 	bool plotSeparate = false;
 
 	std::string filename;
+
+	// read command line
 	std::string dummy; // ignore options that go directly to grid
 	CLI::App app{"NSPT for SU(3) lattice gauge theory"};
 	app.add_option("--grid", dummy, "lattice size (e.g. '8.8.8.8')");
@@ -76,37 +81,50 @@ int main(int argc, char **argv)
 
 	Grid_init(&argc, &argv);
 	std::vector<int> geom = GridDefaultLatt();
+	if (seed == -1)
+		seed = std::random_device()();
 
 	if (primaryTask())
 		fmt::print("L = {}, eps = {}, maxt = {}\n", geom[0], eps,
 		           (count + discard) * eps);
 
-	// data
-	if (seed == -1)
-		seed = std::random_device()();
-	auto lang = LangevinPert(geom, seed);
-	lang.U[0]._grid->show_decomposition();
+	// initialize the gauge field
+	GridBase *grid = SpaceTimeGrid::makeFourDimGrid(
+	    geom, GridDefaultSimd(Nd, vComplex::Nsimd()), GridDefaultMpi());
+	grid->show_decomposition();
+	std::array<Field, 4> U = {Field(grid), Field(grid), Field(grid),
+	                          Field(grid)};
+	for (int mu = 0; mu < 4; ++mu)
+		U[mu] = 1.0;
+
+	// temporary
+	std::array<Field, 4> A = {Field(grid), Field(grid), Field(grid),
+	                          Field(grid)};
+
+	// some observables to track
 	std::vector<double> ts;
 	vector2d<double> plaq;
 	AlgebraObservables algObs;
 
 	// performance measure
 	Stopwatch swEvolve, swMeasure, swLandau, swZmreg;
-	double lastPrint = -1.0;
 
 	// evolve it some time
+	std::unique_ptr<Integrator> integrator;
+	if (improvement == 0)
+		integrator = std::make_unique<EulerIntegrator>(grid, seed);
+	else if (improvement == 1)
+		integrator = std::make_unique<BFIntegrator>(grid, seed);
+	else if (improvement == 2)
+		integrator = std::make_unique<BauerIntegrator>(grid, seed);
+	else
+		assert(false);
+
 	for (int k = -discard; k < count; ++k)
 	{
 		// step 1: langevin evolution
 		swEvolve.start();
-		if (improvement == 0)
-			lang.evolveStep(eps);
-		else if (improvement == 1)
-			lang.evolveStepImproved(eps);
-		else if (improvement == 2)
-			lang.evolveStepBauer(eps);
-		else
-			assert(false);
+		integrator->step(U, eps);
 		swEvolve.stop();
 
 		// step 2: stochastic gauge-fixing and zero-mode regularization
@@ -115,13 +133,13 @@ int main(int argc, char **argv)
 
 		swLandau.start();
 		for (int i = 0; i < gaugefix; ++i)
-			lang.landauStep(0.1);
+			landauStep(U, 0.1);
 		swLandau.stop();
 
 		if (zmreg)
 		{
 			swZmreg.start();
-			lang.zmreg(reunit);
+			removeZero(U, reunit);
 			swZmreg.stop();
 		}
 
@@ -129,15 +147,12 @@ int main(int argc, char **argv)
 
 		swMeasure.start();
 
-		double t = (k + discard + 1) * eps;  // Langevin time
-		RealSeries p = avgPlaquette(lang.U); // plaquette
+		double t = (k + discard + 1) * eps; // Langevin time
+		RealSeries p = avgPlaquette(U);     // plaquette
 
 		if (verbosity >= 2 || (verbosity >= 1 && k % 10 == 0))
-		{
 			if (primaryTask())
 				fmt::print("k = {}/{} t = {}, plaq = {:.5}\n", k, count, t, p);
-			lastPrint = t;
-		}
 
 		if (k >= 0)
 		{
@@ -145,7 +160,9 @@ int main(int argc, char **argv)
 			plaq.push_back(asSpan(p));
 
 			// trace/hermiticity/etc of algebra
-			algObs.measure(lang.algebra());
+			for (int mu = 0; mu < 4; ++mu)
+				A[mu] = logMatFast(U[mu]);
+			algObs.measure(A);
 		}
 
 		swMeasure.stop();
