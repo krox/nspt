@@ -13,12 +13,22 @@ void MUnitField::run(Environment &env)
 	    params.grid, Grid::GridDefaultSimd(Nd, Grid::vComplex::Nsimd()),
 	    Grid::GridDefaultMpi());
 
-	// create Gauge config
-	using F = LatticeColourMatrix;
-	std::array<F, 4> &U = env.store.create<std::array<F, 4>>(
-	    params.field_out, F(grid), F(grid), F(grid), F(grid));
-
-	// set it to unit
-	for (int mu = 0; mu < 4; ++mu)
-		U[mu] = 1.0;
+	// create Gauge config and set it to unit
+	if (params.order == 0)
+	{
+		using F = LatticeColourMatrix;
+		std::array<F, 4> &U = env.store.create<std::array<F, 4>>(
+		    params.field_out, F(grid), F(grid), F(grid), F(grid));
+		for (int mu = 0; mu < 4; ++mu)
+			U[mu] = 1.0;
+	}
+	else
+	{
+		assert(params.order == No);
+		using F = LatticeColourMatrixSeries;
+		std::array<F, 4> &U = env.store.create<std::array<F, 4>>(
+		    params.field_out, F(grid), F(grid), F(grid), F(grid));
+		for (int mu = 0; mu < 4; ++mu)
+			U[mu] = 1.0;
+	}
 }

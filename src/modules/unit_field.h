@@ -10,6 +10,7 @@ class MUnitFieldParams
   public:
 	std::vector<int> grid;
 	std::string field_out;
+	int order; // 0 for non-perturbative
 };
 
 class MUnitField : public Module
@@ -28,6 +29,10 @@ class MUnitField : public Module
 	{
 		j.at("grid").get_to(params.grid);
 		j.at("field_out").get_to(params.field_out);
+		if (j.count("order"))
+			j.at("order").get_to(params.order);
+		else
+			params.order = 0;
 	}
 
 	virtual void run(Environment &env);

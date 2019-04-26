@@ -3,11 +3,21 @@
 
 #include "Grid/Grid.h"
 #include "nspt/grid_utils.h"
+#include "nspt/pqcd.h"
+#include "util/gnuplot.h"
+#include "util/vector2d.h"
+
+// ugh...
+using namespace util;
+using namespace Grid;
+using namespace Grid::pQCD;
 
 /** A bunch of order-by-order observables measured on the gauge algebra config.
  *  Not very useful for physical insight, but nice to track during simulation */
 class AlgebraObservables
 {
+	using Field = Grid::pQCD::LatticeColourMatrixSeries;
+
   public:
 	// these are zero except for rounding errors (can be corrected by "reunit")
 	vector2d<double> traceA; // avg_µx |Tr(A)|^2
@@ -22,8 +32,6 @@ class AlgebraObservables
 
 	// no specific behaviour, but unbounded growth is a bad sign
 	vector2d<double> normA; // avg_µx |A|^2
-
-	typedef LatticeColourMatrixSeries Field;
 
 	void measure(const std::array<Field, 4> &A)
 	{
