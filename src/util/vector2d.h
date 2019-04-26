@@ -32,6 +32,11 @@ template <typename T> class vector2d
 	span<T> operator()(size_t i) { return row(i); }
 	span<const T> operator()(size_t i) const { return row(i); }
 
+	span<T> front() { return row(0); }
+	span<T> back() { return row(height_ - 1); }
+	span<const T> front() const { return row(0); }
+	span<const T> back() const { return row(height_ - 1); }
+
 	/** column access */
 	gspan<T> col(size_t j)
 	{
