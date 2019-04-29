@@ -1,9 +1,9 @@
 #include "Grid/Grid.h"
 
+#include "CLI/CLI.hpp"
 #include "modules/module.h"
+#include "nlohmann/json.hpp"
 #include "nspt/grid_utils.h"
-#include "util/CLI11.hpp"
-#include "util/json.hpp"
 #include "util/stopwatch.h"
 
 using namespace nlohmann;

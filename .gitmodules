@@ -1,0 +1,9 @@
+[submodule "CLI11"]
+	path = CLI11
+	url = git@github.com:CLIUtils/CLI11.git
+[submodule "json"]
+	path = json
+	url = git@github.com:nlohmann/json.git
+[submodule "util"]
+	path = util
+	url = git@github.com:krox/util.git

@@ -1,8 +1,8 @@
 #ifndef MODULES_MODULE_H
 #define MODULES_MODULE_H
 
+#include "nlohmann/json.hpp"
 #include "util/factory.h"
-#include "util/json.hpp"
 
 using nlohmann::json;
 
