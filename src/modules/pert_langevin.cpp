@@ -50,7 +50,7 @@ void MPertLangevin::run(Environment &env)
 		integrator->step(U, params.eps);
 
 		// gaugefixing
-		for (int i = 0; i < params.gaugefix; ++i)
+		for (int j = 0; j < params.gaugefix; ++j)
 			landauStep(U, 0.1); // TODO: why this coefficient?
 
 		// zero-mode regularization

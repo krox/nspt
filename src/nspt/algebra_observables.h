@@ -72,7 +72,11 @@ class AlgebraObservables
 
 	void plot(const std::vector<double> &ts)
 	{
-		auto plt = [] { return Gnuplot().style("lines").setLogScaleY(); };
+		auto plt = [] {
+			auto p = Gnuplot();
+			p.style("lines").setLogScaleY();
+			return p;
+		};
 
 		plt().plotData(ts, traceA, "avg |Tr(A)|^2");
 		plt().plotData(ts, hermA, "avg |A+A^+|^2");

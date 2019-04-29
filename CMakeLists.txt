@@ -2,9 +2,6 @@ cmake_minimum_required (VERSION 3.9.0)
 project (mesh)
 include_directories(src)
 
-include_directories(../util/src)
-link_directories(../util/build)
-
 # enable IPO
 include(CheckIPOSupported)
 check_ipo_supported(RESULT supported OUTPUT error)
@@ -20,7 +17,7 @@ find_package(HDF5 REQUIRED)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=native -Wall -Wextra -Wno-unused-variable -Wno-register -Werror -fopenmp")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=native -Wall -Wextra -Wshadow -Wnon-virtual-dtor -Werror -pedantic -fopenmp")
 
 file(GLOB utils "src/util/*.cpp" "src/nspt/*.cpp" "src/modules/*.cpp")
 

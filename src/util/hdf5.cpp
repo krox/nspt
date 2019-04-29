@@ -15,7 +15,7 @@ hid_t enforce(hid_t id)
 }
 } // namespace
 
-DataSet::DataSet(hid_t id) : id(id)
+DataSet::DataSet(hid_t id_) : id(id_)
 {
 	if (id <= 0)
 		return;

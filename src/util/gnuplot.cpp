@@ -21,6 +21,12 @@ Gnuplot::Gnuplot(bool persist) : plotID(nplotsGlobal++)
 	fflush(pipe);
 }
 
+Gnuplot::~Gnuplot()
+{
+	if (pipe != nullptr)
+		pclose(pipe);
+}
+
 Gnuplot &Gnuplot::plotFunction(const std::string &fun, const std::string &title)
 {
 	fmt::print(pipe, "{} {} title \"{}\"\n", nplots ? "replot" : "plot", fun,

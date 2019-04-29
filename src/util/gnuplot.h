@@ -23,6 +23,20 @@ class Gnuplot
   public:
 	/** constructor */
 	explicit Gnuplot(bool persist = true);
+	~Gnuplot();
+
+	/** non-copyable but movable due to pipe */
+	Gnuplot(const Gnuplot &) = delete;
+	Gnuplot &operator=(const Gnuplot &) = delete;
+
+	Gnuplot(Gnuplot &&b)
+	    : pipe(b.pipe), nplots(b.nplots), plotID(b.plotID),
+	      style_(std::move(b.style_)), logx_(b.logx_), logy_(b.logy_),
+	      logz_(b.logz_)
+	{
+		b.pipe = nullptr;
+	}
+	Gnuplot &operator=(Gnuplot &&) = delete;
 
 	/** plot a function given by a string that gnuplot can understand */
 	Gnuplot &plotFunction(const std::string &fun,
@@ -77,7 +91,7 @@ class Gnuplot
 	Gnuplot &clear();
 
 	Gnuplot &savefig(const std::string &filename);
-};
+}; // namespace util
 
 } // namespace util
 

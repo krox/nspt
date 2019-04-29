@@ -27,7 +27,10 @@ class DataSet
 	/** non copyable but movable */
 	DataSet(const DataSet &) = delete;
 	DataSet &operator=(const DataSet &) = delete;
-	DataSet(DataSet &&f) : id(f.id) { f.id = 0; };
+	DataSet(DataSet &&f) : id(f.id), size_(f.size_), shape_(f.shape_)
+	{
+		f.id = 0;
+	};
 	DataSet &operator=(DataSet &&f)
 	{
 		close();
@@ -58,7 +61,7 @@ class DataFile
 {
 	hid_t id = 0; // >0 for actually opened files
 
-	explicit DataFile(hid_t id) : id(id) {}
+	explicit DataFile(hid_t id_) : id(id_) {}
 
 	void setAttribute(const std::string &, hid_t, const void *);
 	void setAttribute(const std::string &, hid_t, hsize_t, const void *);

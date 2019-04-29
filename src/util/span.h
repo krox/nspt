@@ -1,6 +1,7 @@
 #ifndef UTIL_SPAN_H
 #define UTIL_SPAN_H
 
+#include <cassert>
 #include <type_traits>
 #include <vector>
 
