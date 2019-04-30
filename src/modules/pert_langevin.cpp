@@ -38,6 +38,15 @@ void MPertLangevin::run(Environment &env)
 	else
 		assert(false);
 
+	std::unique_ptr<LandauIntegrator> landauIntegrator;
+	RealSeries landauEps = params.gaugefix_fourier ? 0.0625 : 0.1;
+	if (params.gaugefix)
+	{
+		landauIntegrator = std::make_unique<LandauIntegrator>(
+		    dynamic_cast<Grid::GridCartesian *>(grid));
+		landauIntegrator->fourierAccel = params.gaugefix_fourier;
+	}
+
 	// track some observables during simulation
 	std::vector<double> ts;
 	vector2d<double> plaq;
@@ -51,7 +60,7 @@ void MPertLangevin::run(Environment &env)
 
 		// gaugefixing
 		for (int j = 0; j < params.gaugefix; ++j)
-			landauStep(U, 0.1); // TODO: why this coefficient?
+			landauIntegrator->step(U, landauEps);
 
 		// zero-mode regularization
 		if (params.zmreg)

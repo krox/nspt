@@ -66,4 +66,29 @@ class BauerIntegrator : public Integrator
 	void step(std::array<Field, 4> &U, double eps) override;
 };
 
+class LandauIntegrator
+{
+	// shorthands. possibly template paramters in the future
+	using Field = Grid::pQCD::LatticeColourMatrixSeries;
+	using Term = Grid::pQCD::LatticeColourMatrix;
+	using StepSize = Grid::pQCD::RealSeries;
+
+	// temporaries
+	mutable Field R, tmp;
+
+	// Fourier-acceleration
+	Grid::pQCD::LatticeReal prec;
+	Grid::FFT fft;
+
+  public:
+	// settings
+	bool fullAlgebra = true;
+	bool fourierAccel = true;
+
+	LandauIntegrator(Grid::GridCartesian *grid);
+	StepSize gaugecond(const std::array<Field, 4> &U) const;
+	void step(std::array<Field, 4> &U, StepSize eps);
+	StepSize stepAdaptive(std::array<Field, 4> &U, StepSize eps);
+};
+
 #endif

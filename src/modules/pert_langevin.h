@@ -12,6 +12,7 @@ class MPertLangevinParams
 	int reunit = 1;
 	int zmreg = 1;
 	int gaugefix = 1;
+	int gaugefix_fourier = 1;
 	int count = 1000;
 	int seed = -1;
 	std::string field;
@@ -35,6 +36,7 @@ class MPertLangevin : public Module
 		j.at("reunit").get_to(params.reunit);
 		j.at("zmreg").get_to(params.zmreg);
 		j.at("gaugefix").get_to(params.gaugefix);
+		j.at("gaugefix_fourier").get_to(params.gaugefix_fourier);
 		j.at("improvement").get_to(params.improvement);
 		j.at("count").get_to(params.count);
 		j.at("field").get_to(params.field);

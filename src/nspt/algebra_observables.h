@@ -67,7 +67,7 @@ class AlgebraObservables
 		w += A[1] - Cshift(A[1], 1, -1);
 		w += A[2] - Cshift(A[2], 2, -1);
 		w += A[3] - Cshift(A[3], 3, -1);
-		gaugeCond.push_back(asSpan((1.0 / V) * norm2_series(w)));
+		gaugeCond.push_back(asSpan((1.0 / V) * toReal(sum(trace(adj(w) * w)))));
 	}
 
 	void plot(const std::vector<double> &ts)
