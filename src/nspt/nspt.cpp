@@ -5,7 +5,7 @@ using namespace Grid::pQCD;
 
 #include "nspt/wilson.h"
 
-using Field = LatticeColourMatrixSeries;
+using Field = pQCD::LatticeColourMatrixSeries;
 
 void removeZero(std::array<Field, 4> &U, bool reunit)
 {

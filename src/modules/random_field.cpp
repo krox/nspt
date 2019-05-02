@@ -4,17 +4,17 @@
 #include <Grid/Grid.h>
 
 using namespace Grid;
-using namespace Grid::pQCD;
 
 void MRandomField::run(Environment &env)
 {
+	assert(params.grid.size() == 4);
 	// TODO: encapsulate "makeGrid" into a global factory
-	Grid::GridCartesian *grid = Grid::QCD::SpaceTimeGrid::makeFourDimGrid(
-	    params.grid, Grid::GridDefaultSimd(Nd, Grid::vComplex::Nsimd()),
-	    Grid::GridDefaultMpi());
+	GridCartesian *grid = QCD::SpaceTimeGrid::makeFourDimGrid(
+	    params.grid, Grid::GridDefaultSimd(4, vComplex::Nsimd()),
+	    GridDefaultMpi());
 
 	// create Gauge config
-	using F = LatticeColourMatrix;
+	using F = QCD::LatticeColourMatrix;
 	std::array<F, 4> &U = env.store.create<std::array<F, 4>>(
 	    params.field_out, F(grid), F(grid), F(grid), F(grid));
 

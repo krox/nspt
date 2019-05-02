@@ -4,19 +4,20 @@
 #include <Grid/Grid.h>
 
 using namespace Grid;
-using namespace Grid::pQCD;
 
 void MUnitField::run(Environment &env)
 {
+	assert(params.grid.size() == 4);
+
 	// TODO: encapsulate "makeGrid" into a global factory
-	Grid::GridCartesian *grid = Grid::QCD::SpaceTimeGrid::makeFourDimGrid(
-	    params.grid, Grid::GridDefaultSimd(Nd, Grid::vComplex::Nsimd()),
-	    Grid::GridDefaultMpi());
+	GridCartesian *grid = QCD::SpaceTimeGrid::makeFourDimGrid(
+	    params.grid, Grid::GridDefaultSimd(4, vComplex::Nsimd()),
+	    GridDefaultMpi());
 
 	// create Gauge config and set it to unit
 	if (params.order == 0)
 	{
-		using F = LatticeColourMatrix;
+		using F = QCD::LatticeColourMatrix;
 		std::array<F, 4> &U = env.store.create<std::array<F, 4>>(
 		    params.field_out, F(grid), F(grid), F(grid), F(grid));
 		for (int mu = 0; mu < 4; ++mu)
@@ -24,8 +25,8 @@ void MUnitField::run(Environment &env)
 	}
 	else
 	{
-		assert(params.order == No);
-		using F = LatticeColourMatrixSeries;
+		assert(params.order == pQCD::No);
+		using F = pQCD::LatticeColourMatrixSeries;
 		std::array<F, 4> &U = env.store.create<std::array<F, 4>>(
 		    params.field_out, F(grid), F(grid), F(grid), F(grid));
 		for (int mu = 0; mu < 4; ++mu)

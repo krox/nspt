@@ -1,17 +1,15 @@
 #include "modules/langevin.h"
 
 #include "nspt/grid_utils.h"
-#include "nspt/pqcd.h"
 #include "util/hdf5.h"
 #include <Grid/Grid.h>
 
 using namespace Grid;
-using namespace Grid::pQCD;
 using namespace util;
 
 #include "nspt/wilson.h"
 
-static void makeNoise(LatticeColourMatrix &out, GridParallelRNG &pRNG,
+static void makeNoise(QCD::LatticeColourMatrix &out, GridParallelRNG &pRNG,
                       double eps)
 {
 	gaussian(pRNG, out);
@@ -22,7 +20,7 @@ static void makeNoise(LatticeColourMatrix &out, GridParallelRNG &pRNG,
 void MLangevin::run(Environment &env)
 {
 	// gauge field
-	using Field = LatticeColourMatrix;
+	using Field = QCD::LatticeColourMatrix;
 	std::array<Field, 4> &U = env.store.get<std::array<Field, 4>>(params.field);
 	Grid::GridBase *grid = U[0]._grid;
 
@@ -94,7 +92,8 @@ void MLangevin::run(Environment &env)
 				wilsonDeriv(tmp, Uprime, mu);
 				force[mu] =
 				    0.5 * (force[mu] - params.eps * tmp) -
-				    (params.eps * params.eps / params.beta * Nc / 6.0) * tmp;
+				    (params.eps * params.eps / params.beta * QCD::Nc / 6.0) *
+				        tmp;
 			}
 
 			// evolve U = exp(force' + noise) U
@@ -135,8 +134,8 @@ void MLangevin::run(Environment &env)
 			for (int mu = 0; mu < 4; ++mu)
 			{
 				wilsonDeriv(force[mu], Uprime, mu);
-				force[mu] *= params.eps * k4 +
-				             params.eps * params.eps / params.beta * Nc * k5;
+				force[mu] *= params.eps * k4 + params.eps * params.eps /
+				                                   params.beta * pQCD::Nc * k5;
 				force[mu] += k6 * noise[mu];
 				U[mu] = expMat(force[mu], -1.0) * U[mu];
 			}
