@@ -7,147 +7,135 @@
 using namespace Grid;
 using namespace util;
 
-#include "nspt/wilson.h"
+using GaugeField = QCD::LatticeLorentzColourMatrix;
+using GaugeMat = QCD::LatticeColourMatrix;
 
-static void makeNoise(QCD::LatticeColourMatrix &out, GridParallelRNG &pRNG,
-                      double eps)
+/** compute V = exp(aX +bY)U. aliasing is allowed */
+static void evolve(GaugeField &V, double a, const GaugeField &X, double b,
+                   const GaugeField &Y, const GaugeField &U)
+{
+	conformable(V._grid, X._grid);
+	conformable(V._grid, Y._grid);
+	conformable(V._grid, U._grid);
+
+	parallel_for(int ss = 0; ss < V._grid->oSites(); ss++)
+	{
+		QCD::vLorentzColourMatrix tmp = a * X._odata[ss] + b * Y._odata[ss];
+		for (int mu = 0; mu < 4; ++mu)
+			V._odata[ss](mu) = Exponentiate(tmp(mu), 1.0) * U._odata[ss](mu);
+	}
+}
+
+/** compute V = exp(aX +bY + cZ))U. aliasing is allowed */
+static void evolve(GaugeField &V, double a, const GaugeField &X, double b,
+                   const GaugeField &Y, double c, const GaugeField &Z,
+                   const GaugeField &U)
+{
+	conformable(V._grid, X._grid);
+	conformable(V._grid, Y._grid);
+	conformable(V._grid, Z._grid);
+	conformable(V._grid, U._grid);
+
+	parallel_for(int ss = 0; ss < V._grid->oSites(); ss++)
+	{
+		QCD::vLorentzColourMatrix tmp =
+		    a * X._odata[ss] + b * Y._odata[ss] + c * Z._odata[ss];
+		for (int mu = 0; mu < 4; ++mu)
+			V._odata[ss](mu) = Exponentiate(tmp(mu), 1.0) * U._odata[ss](mu);
+	}
+}
+
+/** this creates normal distribution with variance <eta^2>=2 */
+static void makeNoise(GaugeField &out, GridParallelRNG &pRNG)
 {
 	gaussian(pRNG, out);
-	out *= eps * std::sqrt(0.5); // normalization of SU(3) generators
 	out = Ta(out);
 }
 
 void MLangevin::run(Environment &env)
 {
 	// gauge field
-	using Field = QCD::LatticeColourMatrix;
-	std::array<Field, 4> &U = env.store.get<std::array<Field, 4>>(params.field);
-	Grid::GridBase *grid = U[0]._grid;
+	GaugeField &U = env.store.get<GaugeField>(params.field);
+	GridBase *grid = U._grid;
 
 	// temporary storage
-	std::array<Field, 4> Uprime{Field(grid), Field(grid), Field(grid),
-	                            Field(grid)};
-	std::array<Field, 4> force{Field(grid), Field(grid), Field(grid),
-	                           Field(grid)};
-	std::array<Field, 4> noise{Field(grid), Field(grid), Field(grid),
-	                           Field(grid)};
+	GaugeField Uprime(grid);
+	GaugeField force(grid);
+	GaugeField noise(grid);
 
 	// init RNG
 	GridParallelRNG pRNG(grid);
 	GridSerialRNG sRNG;
 	std::vector<int> pseeds({params.seed});
-	std::vector<int> sseeds({params.seed + 1});
 	pRNG.SeedFixedIntegers(pseeds);
-	sRNG.SeedFixedIntegers(sseeds);
 
 	// track some observables during simulation
 	std::vector<double> ts, plaq;
+
+	QCD::WilsonGaugeActionR gaugeAction(1.0);
+	double eps = params.eps;
+	double beta = params.beta;
+	double cA = 3.0; // = Nc = casimir in adjoint representation
 
 	for (int i = 0; i < params.count; ++i)
 	{
 		// Euler scheme
 		if (params.improvement == 0)
 		{
-			// build force term: F = -eps*D(S) + sqrt(eps/beta) * eta
-			for (int mu = 0; mu < 4; ++mu)
-			{
-				wilsonDeriv(force[mu], U, mu);
-				force[mu] *= -params.eps;
-
-				Field drift(grid);
-				makeNoise(drift, pRNG,
-				          std::sqrt(2.0 * params.eps / params.beta));
-				force[mu] += drift;
-			}
+			// build noise and force at U
+			makeNoise(noise, pRNG);
+			gaugeAction.deriv(U, force);
 
 			// evolve U = exp(F) U
-			for (int mu = 0; mu < 4; ++mu)
-				U[mu] = expMat(force[mu], 1.0) * U[mu];
+			evolve(U, -eps, force, std::sqrt(eps / beta), noise, U);
 		}
 		// "BF" scheme
 		else if (params.improvement == 1)
 		{
 			// compute force and noise at U
-			for (int mu = 0; mu < 4; ++mu)
-			{
-				wilsonDeriv(force[mu], U, mu);
-				force[mu] *= -params.eps;
-				makeNoise(noise[mu], pRNG,
-				          std::sqrt(2.0 * params.eps / params.beta));
-			}
+			gaugeAction.deriv(U, force);
+			makeNoise(noise, pRNG);
 
-			// evolve U' = exp(force + noise) U
-			for (int mu = 0; mu < 4; ++mu)
-			{
-				// noise enters the force at order beta^-1/2
-				Field tmp = force[mu];
-				tmp += noise[mu];
-				Uprime[mu] = expMat(tmp, 1.0) * U[mu];
-			}
+			// evolve U' = exp(F) U
+			evolve(Uprime, -eps, force, std::sqrt(eps / beta), noise, U);
 
-			// build improved force
-			for (int mu = 0; mu < 4; ++mu)
-			{
-				Field tmp(grid);
-				wilsonDeriv(tmp, Uprime, mu);
-				force[mu] =
-				    0.5 * (force[mu] - params.eps * tmp) -
-				    (params.eps * params.eps / params.beta * QCD::Nc / 6.0) *
-				        tmp;
-			}
+			// compute force at U'
+			GaugeField force2(grid);
+			gaugeAction.deriv(Uprime, force2);
 
-			// evolve U = exp(force' + noise) U
-			for (int mu = 0; mu < 4; ++mu)
-			{
-				// noise enters the force at order beta^-1/2
-				Field tmp = force[mu];
-				tmp += noise[mu];
-				U[mu] = expMat(tmp, 1.0) * U[mu];
-			}
+			// evolve U = exp(F') U
+			evolve(U, -0.5 * eps, force + force2, std::sqrt(eps / beta), noise,
+			       eps * eps / beta * cA / 6.0, force2, U);
 		}
 		// "Bauer" scheme
 		else if (params.improvement == 2)
 		{
-			/** constant names as in https://arxiv.org/pdf/1303.3279.pdf */
-			double k1 = (-3.0 + 2.0 * std::sqrt(2.0)) / 2.0;
-			double k2 = (-2.0 + std::sqrt(2.0)) / 2.0;
-			// double k3 = 0.0;
-			double k4 = 1.0;
-			double k5 = (5.0 - 3.0 * std::sqrt(2.0)) / 12.0;
-			double k6 = 1.0;
+			/** see https://arxiv.org/pdf/1303.3279.pdf (up to signs) */
+			constexpr double k1 = 0.08578643762690485; // (2 sqrt(2) - 3) / 2
+			constexpr double k2 = 0.2928932188134524;  // (sqrt(2) - 2) / 2
+			constexpr double k5 = 0.06311327607339286; // (5 - 3 * sqrt(2)) / 12
 
-			// compute force and noise at U
-			// evolve U' = exp(force + noise) U
-			for (int mu = 0; mu < 4; ++mu)
-			{
-				wilsonDeriv(force[mu], U, mu);
-				force[mu] *= params.eps * k1;
-				makeNoise(noise[mu], pRNG,
-				          std::sqrt(2.0 * params.eps / params.beta));
+			// compute noise and force at U and evolve U' = exp(F) U
+			makeNoise(noise, pRNG);
+			gaugeAction.deriv(U, force);
+			evolve(Uprime, -eps * k1, force, std::sqrt(eps / beta) * k2, noise,
+			       U);
 
-				force[mu] += k2 * noise[mu];
-				Uprime[mu] = expMat(force[mu], 1.0) * U[mu];
-			}
-
-			// compute force at U'
-			// evolve U = exp(force' + noise) U
-			for (int mu = 0; mu < 4; ++mu)
-			{
-				wilsonDeriv(force[mu], Uprime, mu);
-				force[mu] *= params.eps * k4 + params.eps * params.eps /
-				                                   params.beta * pQCD::Nc * k5;
-				force[mu] += k6 * noise[mu];
-				U[mu] = expMat(force[mu], -1.0) * U[mu];
-			}
+			// compute force at U' and evolve U = exp(F') U
+			gaugeAction.deriv(Uprime, force);
+			evolve(U, -eps, force, std::sqrt(eps / beta), noise,
+			       -k5 * cA * eps * eps / beta, force, U);
 		}
+		else
+			assert(false);
 
 		// project to SU(3) in case of rounding errors
 		if (params.reunit)
 			for (int mu = 0; mu < 4; ++mu)
-				ProjectOnGroup(U[mu]);
+				ProjectOnGroup(U);
 
 		// measurements
-		double p = avgPlaquette(U);
+		double p = QCD::ColourWilsonLoops::avgPlaquette(U);
 		ts.push_back((i + 1) * params.eps);
 		plaq.push_back(p);
 

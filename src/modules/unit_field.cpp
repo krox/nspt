@@ -17,11 +17,9 @@ void MUnitField::run(Environment &env)
 	// create Gauge config and set it to unit
 	if (params.order == 0)
 	{
-		using F = QCD::LatticeColourMatrix;
-		std::array<F, 4> &U = env.store.create<std::array<F, 4>>(
-		    params.field_out, F(grid), F(grid), F(grid), F(grid));
-		for (int mu = 0; mu < 4; ++mu)
-			U[mu] = 1.0;
+		QCD::LatticeGaugeField &U =
+		    env.store.create<QCD::LatticeGaugeField>(params.field_out, grid);
+		U = 1.0;
 	}
 	else
 	{
