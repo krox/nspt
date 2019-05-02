@@ -30,12 +30,9 @@ include_directories(CLI11/include)
 
 find_package(HDF5 REQUIRED)
 
-file(GLOB utils "src/util/*.cpp" "src/nspt/*.cpp" "src/modules/*.cpp")
+file(GLOB files_cpp "src/util/*.cpp" "src/nspt/*.cpp" "src/modules/*.cpp")
 
-set(binaries "su3_sweep" "su3_langevin" "su3_nspt" "app")
-foreach(bin ${binaries})
-	add_executable(${bin} src/${bin}.cpp ${utils})
-	target_include_directories(${bin} PRIVATE ${HDF5_INCLUDE_DIRS})
-	target_link_libraries(${bin} util ${HDF5_LIBRARIES} fmt stdc++fs Grid numa z crypto lime fftw3f fftw3 mpfr gmp stdc++ m z numa)
-	target_compile_definitions(${bin} PRIVATE NSPT_ORDER=${ORDER})
-endforeach()
+add_executable(app src/app.cpp ${files_cpp})
+target_include_directories(app PRIVATE ${HDF5_INCLUDE_DIRS})
+target_link_libraries(app util ${HDF5_LIBRARIES} fmt stdc++fs Grid numa z crypto lime fftw3f fftw3 mpfr gmp stdc++ m z numa)
+target_compile_definitions(app PRIVATE NSPT_ORDER=${ORDER})
