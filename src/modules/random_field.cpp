@@ -6,11 +6,9 @@ using namespace Grid;
 
 void MRandomField::run(Environment &env)
 {
+	// get the grid
 	assert(params.grid.size() == 4);
-	// TODO: encapsulate "makeGrid" into a global factory
-	GridCartesian *grid = QCD::SpaceTimeGrid::makeFourDimGrid(
-	    params.grid, Grid::GridDefaultSimd(4, vComplex::Nsimd()),
-	    GridDefaultMpi());
+	GridCartesian *grid = env.getGrid(params.grid);
 
 	// create Gauge config
 	QCD::LatticeGaugeField &U =
