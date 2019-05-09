@@ -1,6 +1,7 @@
 #include "modules/module.h"
 
 #include "modules/langevin.h"
+#include "modules/lattice_io.h"
 #include "modules/pert_langevin.h"
 #include "modules/random_field.h"
 #include "modules/unit_field.h"
@@ -20,6 +21,10 @@ std::unique_ptr<Module> createModule(const std::string &id, const json &params)
 		return std::make_unique<MPertLangevin>(params);
 	else if (id == "DeleteObject")
 		return std::make_unique<MDeleteObject>(params);
+	else if (id == "WriteField")
+		return std::make_unique<MWriteField>(params);
+	else if (id == "ReadField")
+		return std::make_unique<MReadField>(params);
 	else
 		throw std::range_error(fmt::format("Module '{}' unknown.", id));
 }
