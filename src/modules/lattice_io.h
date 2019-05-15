@@ -10,6 +10,7 @@ class MWriteFieldParams
   public:
 	std::string field;
 	std::string filename;
+	std::string format;
 };
 
 class MWriteField : public Module
@@ -27,6 +28,10 @@ class MWriteField : public Module
 	{
 		j.at("field").get_to(params.field);
 		j.at("filename").get_to(params.filename);
+		if (j.count("format"))
+			j.at("format").get_to(params.format);
+		else
+			params.format = "";
 	}
 
 	virtual void run(Environment &env);
@@ -37,6 +42,8 @@ class MReadFieldParams
   public:
 	std::string field;
 	std::string filename;
+	std::string format;
+	std::vector<int> grid; // only used for nersc format right now
 };
 
 class MReadField : public Module
@@ -54,6 +61,12 @@ class MReadField : public Module
 	{
 		j.at("field").get_to(params.field);
 		j.at("filename").get_to(params.filename);
+		if (j.count("format"))
+			j.at("format").get_to(params.format);
+		else
+			params.format = "";
+		if (j.count("grid"))
+			j.at("grid").get_to(params.grid);
 	}
 
 	virtual void run(Environment &env);

@@ -12,4 +12,7 @@ void writeConfig(const std::string &filename, QCD::LatticeGaugeField &U);
 std::vector<int> getGridFromFile(const std::string &filename);
 void readConfig(const std::string &filename, QCD::LatticeGaugeField &U);
 
+std::vector<int> getGridFromFileOpenQCD(const std::string &filename);
+void readConfigOpenQCD(const std::string &filename, QCD::LatticeGaugeField &U);
+
 #endif

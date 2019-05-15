@@ -164,3 +164,103 @@ void readConfig(const std::string &filename, QCD::LatticeGaugeField &U)
 	readField(filename, U, meta);
 	assert(meta["type"] == "LatticeLorentzColourMatrix");
 }
+
+// OpenQCD format
+
+struct HeaderOpenQCD
+{
+	int Nt, Nx, Ny, Nz;
+	double plaq;
+};
+
+std::vector<int> getGridFromFileOpenQCD(const std::string &filename)
+{
+	HeaderOpenQCD header;
+
+	// I hope openeing from all tasks in parallel works
+	{
+		auto file = std::fstream(filename, std::ios::in | std::ios::binary);
+		file.read((char *)&header, sizeof(HeaderOpenQCD));
+		file.close();
+	}
+
+	// sanity check (should trigger on endian issues)
+	assert(0 < header.Nt && header.Nt <= 1024);
+	assert(0 < header.Nx && header.Nx <= 1024);
+	assert(0 < header.Ny && header.Ny <= 1024);
+	assert(0 < header.Nz && header.Nz <= 1024);
+
+	return {header.Nx, header.Ny, header.Nz, header.Nt};
+}
+
+void readConfigOpenQCD(const std::string &filename, QCD::LatticeGaugeField &U)
+{
+	using namespace Grid::QCD;
+
+	HeaderOpenQCD header;
+	auto grid = dynamic_cast<GridCartesian *>(U._grid);
+	assert(grid != nullptr);
+	assert(grid->FullDimensions().size() == 4);
+	int Nx = grid->FullDimensions()[0];
+	int Ny = grid->FullDimensions()[1];
+	int Nz = grid->FullDimensions()[2];
+	int Nt = grid->FullDimensions()[3];
+
+	std::vector<ColourMatrix> data(grid->gSites() * 4);
+	// I hope openeing from all tasks in parallel works
+	{
+		auto file = std::fstream(filename, std::ios::in | std::ios::binary);
+		file.read((char *)&header, sizeof(HeaderOpenQCD));
+		if (header.Nx != Nx || header.Ny != Ny || header.Nz != Nz ||
+		    header.Nt != Nt)
+			throw std::runtime_error("OpenQCD file lattice size mismatch");
+		file.read((char *)data.data(), data.size() * sizeof(ColourMatrix));
+		file.close();
+	}
+
+	// coordinate of this process
+	std::vector<int> pcoor;
+	grid->ProcessorCoorFromRank(CartesianCommunicator::RankWorld(), pcoor);
+
+	// loop over local indices
+	parallel_for(int idx = 0; idx < grid->lSites(); ++idx)
+	{
+		// convert local index to global coordinate
+		std::vector<int> lcoor, gcoor;
+		grid->LocalIndexToLocalCoor(idx, lcoor);
+		grid->ProcessorCoorLocalCoorToGlobalCoor(pcoor, lcoor, gcoor);
+
+		// openQCD stores links attached to odd sites
+		bool neg = (gcoor[0] + gcoor[1] + gcoor[2] + gcoor[3]) % 2 != 1;
+
+		LorentzColourMatrix site_data;
+		for (int mu = 0; mu < 4; ++mu)
+		{
+			// determine the site at which it is stored
+			std::vector<int> c = gcoor;
+			if (neg)
+				c[mu] = (c[mu] + 1) % grid->FullDimensions()[mu];
+
+			// site-index in the OpenQCD format (which usese t,x,y,z order)
+			int openqcd_idx =
+			    (c[3] * Nx * Ny * Nz + c[0] * Ny * Nz + c[1] * Nz + c[2]) / 2;
+			int openqcd_mu = (mu + 1) % 4;
+
+			// pick the colour-matrix out
+			site_data(mu) =
+			    data[8 * openqcd_idx + 2 * openqcd_mu + (neg ? 1 : 0)]();
+		}
+
+		pokeLocalSite(site_data, U, lcoor);
+	}
+
+	double plaq = ColourWilsonLoops::avgPlaquette(U);
+
+	if (primaryTask())
+	{
+		fmt::print("read config {}, geom = {}x{}x{}x{}\n", filename, Nx, Ny, Nz,
+		           Nt);
+		fmt::print("stored plaq = {}, current plaq = {} (difference = {})\n",
+		           header.plaq / 3, plaq, plaq - header.plaq / 3);
+	}
+}
