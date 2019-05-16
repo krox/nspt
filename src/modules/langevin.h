@@ -7,16 +7,26 @@
 class MLangevinParams
 {
   public:
+	// IO
+	std::string field;
+	std::string filename;
+
+	// Langevin integration
 	double eps = 0.05;
-	double beta = 0;
 	int improvement = 2;
-	int reunit = 1;
 	int count = 1000;
 	int seed = -1;
 	int sweeps = 1;
-	std::string gauge_action;
-	std::string field;
-	std::string filename;
+	int reunit = 1;
+
+	// gauge action
+	std::string gauge_action; // wilson, symanzik
+	double beta = 0;
+
+	// fermion action
+	std::string fermion_action; // wilson_clover_nf2 or "" for quenched
+	double csw;
+	double kappa_light = 0; // kappa=0  ==  mass=infinity  ==  quenced
 };
 
 class MLangevin : public Module
@@ -46,6 +56,13 @@ class MLangevin : public Module
 			params.seed = std::random_device()();
 		j.at("sweeps").get_to(params.sweeps);
 		j.at("gauge_action").get_to(params.gauge_action);
+
+		if (j.count("fermion_action"))
+			j.at("fermion_action").get_to(params.fermion_action);
+		if (j.count("kappa_light"))
+			j.at("kappa_light").get_to(params.kappa_light);
+		if (j.count("csw"))
+			j.at("csw").get_to(params.csw);
 	}
 
 	virtual void run(Environment &env);
