@@ -52,6 +52,86 @@ static void makeNoise(GaugeField &out, GridParallelRNG &pRNG)
 	out = Ta(out);
 }
 
+/** NOTE: this does basic non-rescaled Langevin evolution.
+ * For nice correlations, use eps=eps/beta so that the effective drift is
+ * invariant of beta */
+static void integrateLangevin(GaugeField &U, QCD::Action<GaugeField> &action,
+                              GridParallelRNG &pRNG, double eps, int sweeps)
+{
+	conformable(U._grid, pRNG._grid);
+	auto grid = U._grid;
+	GaugeField force(grid);
+	GaugeField noise(grid);
+
+	for (int i = 0; i < sweeps; ++i)
+	{
+		makeNoise(noise, pRNG);
+		action.deriv(U, force);
+		evolve(U, -eps, force, std::sqrt(eps), noise, U);
+	}
+}
+
+static void integrateLangevinBF(GaugeField &U, QCD::Action<GaugeField> &action,
+                                GridParallelRNG &pRNG, double eps, int sweeps)
+{
+	conformable(U._grid, pRNG._grid);
+	auto grid = U._grid;
+	GaugeField force(grid);
+	GaugeField force2(grid);
+	GaugeField noise(grid);
+	GaugeField Uprime(grid);
+
+	double cA = 3.0; // = Nc = casimir in adjoint representation
+
+	for (int i = 0; i < sweeps; ++i)
+	{
+		// compute force and noise at U
+		action.deriv(U, force);
+		makeNoise(noise, pRNG);
+
+		// evolve U' = exp(F) U
+		evolve(Uprime, -eps, force, std::sqrt(eps), noise, U);
+
+		// compute force at U'
+		action.deriv(Uprime, force2);
+
+		// evolve U = exp(F') U
+		evolve(U, -0.5 * eps, force + force2, std::sqrt(eps), noise,
+		       eps * eps * cA / 6.0, force2, U);
+	}
+}
+
+static void integrateLangevinBauer(GaugeField &U,
+                                   QCD::Action<GaugeField> &action,
+                                   GridParallelRNG &pRNG, double eps,
+                                   int sweeps)
+{
+	conformable(U._grid, pRNG._grid);
+	auto grid = U._grid;
+	GaugeField force(grid);
+	GaugeField noise(grid);
+	GaugeField Uprime(grid);
+
+	/** see https://arxiv.org/pdf/1303.3279.pdf (up to signs) */
+	constexpr double k1 = 0.08578643762690485; // (2 sqrt(2) - 3) / 2
+	constexpr double k2 = 0.2928932188134524;  // (sqrt(2) - 2) / 2
+	constexpr double k5 = 0.06311327607339286; // (5 - 3 * sqrt(2)) / 12
+
+	double cA = 3.0; // = Nc = casimir in adjoint representation
+
+	for (int i = 0; i < sweeps; ++i)
+	{
+		// compute noise and force at U and evolve U' = exp(F) U
+		makeNoise(noise, pRNG);
+		action.deriv(U, force);
+		evolve(Uprime, -eps * k1, force, std::sqrt(eps) * k2, noise, U);
+
+		// compute force at U' and evolve U = exp(F') U
+		action.deriv(Uprime, force);
+		evolve(U, -eps - k5 * cA * eps * eps, force, std::sqrt(eps), noise, U);
+	}
+}
+
 void MLangevin::run(Environment &env)
 {
 	// gauge field
@@ -72,67 +152,33 @@ void MLangevin::run(Environment &env)
 	// track some observables during simulation
 	std::vector<double> ts, plaq;
 
-	QCD::WilsonGaugeActionR gaugeAction(1.0);
-	double eps = params.eps;
-	double beta = params.beta;
-	double cA = 3.0; // = Nc = casimir in adjoint representation
+	// gauge action
+	std::unique_ptr<QCD::Action<GaugeField>> action;
+	if (params.gauge_action == "wilson")
+		action = std::make_unique<QCD::WilsonGaugeActionR>(params.beta);
+	else if (params.gauge_action == "symanzik")
+		action = std::make_unique<QCD::SymanzikGaugeActionR>(params.beta);
+	else
+		throw std::runtime_error("unkown gauge action");
+
+	// rescale step size
+	double delta = params.eps / params.beta;
 
 	for (int i = 0; i < params.count; ++i)
 	{
-		// Euler scheme
+		// numerical integration of the langevin process
 		if (params.improvement == 0)
-		{
-			// build noise and force at U
-			makeNoise(noise, pRNG);
-			gaugeAction.deriv(U, force);
-
-			// evolve U = exp(F) U
-			evolve(U, -eps, force, std::sqrt(eps / beta), noise, U);
-		}
-		// "BF" scheme
+			integrateLangevin(U, *action, pRNG, delta, params.sweeps);
 		else if (params.improvement == 1)
-		{
-			// compute force and noise at U
-			gaugeAction.deriv(U, force);
-			makeNoise(noise, pRNG);
-
-			// evolve U' = exp(F) U
-			evolve(Uprime, -eps, force, std::sqrt(eps / beta), noise, U);
-
-			// compute force at U'
-			GaugeField force2(grid);
-			gaugeAction.deriv(Uprime, force2);
-
-			// evolve U = exp(F') U
-			evolve(U, -0.5 * eps, force + force2, std::sqrt(eps / beta), noise,
-			       eps * eps / beta * cA / 6.0, force2, U);
-		}
-		// "Bauer" scheme
+			integrateLangevinBF(U, *action, pRNG, delta, params.sweeps);
 		else if (params.improvement == 2)
-		{
-			/** see https://arxiv.org/pdf/1303.3279.pdf (up to signs) */
-			constexpr double k1 = 0.08578643762690485; // (2 sqrt(2) - 3) / 2
-			constexpr double k2 = 0.2928932188134524;  // (sqrt(2) - 2) / 2
-			constexpr double k5 = 0.06311327607339286; // (5 - 3 * sqrt(2)) / 12
-
-			// compute noise and force at U and evolve U' = exp(F) U
-			makeNoise(noise, pRNG);
-			gaugeAction.deriv(U, force);
-			evolve(Uprime, -eps * k1, force, std::sqrt(eps / beta) * k2, noise,
-			       U);
-
-			// compute force at U' and evolve U = exp(F') U
-			gaugeAction.deriv(Uprime, force);
-			evolve(U, -eps, force, std::sqrt(eps / beta), noise,
-			       -k5 * cA * eps * eps / beta, force, U);
-		}
+			integrateLangevinBauer(U, *action, pRNG, delta, params.sweeps);
 		else
 			assert(false);
 
 		// project to SU(3) in case of rounding errors
 		if (params.reunit)
-			for (int mu = 0; mu < 4; ++mu)
-				ProjectOnGroup(U);
+			ProjectOnGroup(U);
 
 		// measurements
 		double p = QCD::ColourWilsonLoops::avgPlaquette(U);
@@ -152,9 +198,14 @@ void MLangevin::run(Environment &env)
 		auto file = DataFile::create(params.filename);
 		file.setAttribute("geom", grid->FullDimensions());
 		file.setAttribute("count", params.count);
+
+		file.setAttribute("sweeps", params.sweeps);
 		file.setAttribute("eps", params.eps);
-		file.setAttribute("beta", params.beta);
 		file.setAttribute("improvement", params.improvement);
+
+		file.setAttribute("gauge_action", params.gauge_action);
+		file.setAttribute("beta", params.beta);
+
 		file.setAttribute("reunit", params.reunit);
 
 		file.createData("ts", ts);

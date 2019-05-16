@@ -13,6 +13,8 @@ class MLangevinParams
 	int reunit = 1;
 	int count = 1000;
 	int seed = -1;
+	int sweeps = 1;
+	std::string gauge_action;
 	std::string field;
 	std::string filename;
 };
@@ -40,9 +42,10 @@ class MLangevin : public Module
 		j.at("seed").get_to(params.seed);
 		if (j.count("filename"))
 			j.at("filename").get_to(params.filename);
-
 		if (params.seed == -1)
 			params.seed = std::random_device()();
+		j.at("sweeps").get_to(params.sweeps);
+		j.at("gauge_action").get_to(params.gauge_action);
 	}
 
 	virtual void run(Environment &env);
