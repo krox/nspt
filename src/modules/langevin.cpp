@@ -7,13 +7,77 @@
 using namespace Grid;
 using namespace util;
 
+template <typename GaugeField>
+class CompositeAction : public QCD::Action<GaugeField>
+{
+	std::vector<std::unique_ptr<QCD::Action<GaugeField>>> actions;
+
+  public:
+	CompositeAction() = default;
+	~CompositeAction() override = default;
+
+	template <typename A, typename... Args> void add(Args &&... args)
+	{
+		actions.push_back(std::make_unique<A>(std::forward<Args>(args)...));
+	}
+
+	void refresh(const GaugeField &U, GridParallelRNG &pRNG) override
+	{
+		for (auto &a : actions)
+			a->refresh(U, pRNG);
+	}
+
+	RealD S(const GaugeField &U) override
+	{
+		RealD s = 0;
+		for (auto &a : actions)
+			s += a->S(U);
+		return s;
+	}
+
+	void deriv(const GaugeField &U, GaugeField &dSdU) override
+	{
+		if (actions.size() == 1)
+			actions[0]->deriv(U, dSdU);
+		else
+		{
+			GaugeField tmp(dSdU._grid);
+			dSdU = 0.0;
+
+			for (auto &a : actions)
+			{
+				a->deriv(U, tmp);
+				// fmt::print("{}: {}\n", a->action_name(), norm2(tmp));
+				dSdU += tmp;
+			}
+		}
+	}
+
+	std::string action_name() override
+	{
+		std::string r = "[";
+		for (auto &a : actions)
+			r += a->action_name() + ", ";
+		r += "]";
+		return r;
+	}
+
+	std::string LogParameters() override
+	{
+		std::string r = "";
+		for (auto &a : actions)
+			r += a->LogParameters();
+		return r;
+	}
+};
+
 using GaugeField = QCD::LatticeLorentzColourMatrix;
 using GaugeMat = QCD::LatticeColourMatrix;
 using FermionField = QCD::LatticeSpinColourVector;
 
 /** compute V = exp(aX)U. aliasing is allowed */
-static void evolve(GaugeField &V, double a, const GaugeField &X,
-                   const GaugeField &U)
+[[maybe_unused]] static void evolve(GaugeField &V, double a,
+                                    const GaugeField &X, const GaugeField &U)
 {
 	conformable(V._grid, X._grid);
 	conformable(V._grid, U._grid);
@@ -71,9 +135,7 @@ static void makeNoise(GaugeField &out, GridParallelRNG &pRNG)
 /** NOTE: this does basic non-rescaled Langevin evolution.
  * For nice correlations, use eps=eps/beta so that the effective drift is
  * invariant of beta */
-static void integrateLangevin(GaugeField &U,
-                              QCD::Action<GaugeField> &gaugeAction,
-                              QCD::Action<GaugeField> *fermAction,
+static void integrateLangevin(GaugeField &U, QCD::Action<GaugeField> &action,
                               GridParallelRNG &pRNG, double eps, int sweeps)
 {
 	conformable(U._grid, pRNG._grid);
@@ -83,20 +145,11 @@ static void integrateLangevin(GaugeField &U,
 
 	for (int i = 0; i < sweeps; ++i)
 	{
-		// NOTE: Euler integration has O(eps) errors anyway, so evolving
-		// gluonic and fermionic actions separately is good enough
-
+		action.refresh(U, pRNG);
 		makeNoise(noise, pRNG);
-		gaugeAction.deriv(U, force);
+		action.deriv(U, force);
+		force = Ta(force);
 		evolve(U, -eps, force, std::sqrt(eps), noise, U);
-
-		if (fermAction)
-		{
-			fermAction->refresh(U, pRNG);
-			fermAction->deriv(U, force);
-			force = Ta(force); // TODO: figure out why is really needed
-			evolve(U, -eps, force, U);
-		}
 	}
 }
 
@@ -114,8 +167,10 @@ static void integrateLangevinBF(GaugeField &U, QCD::Action<GaugeField> &action,
 
 	for (int i = 0; i < sweeps; ++i)
 	{
+		action.refresh(U, pRNG);
 		// compute force and noise at U
 		action.deriv(U, force);
+		force = Ta(force);
 		makeNoise(noise, pRNG);
 
 		// evolve U' = exp(F) U
@@ -123,6 +178,7 @@ static void integrateLangevinBF(GaugeField &U, QCD::Action<GaugeField> &action,
 
 		// compute force at U'
 		action.deriv(Uprime, force2);
+		force2 = Ta(force2);
 
 		// evolve U = exp(F') U
 		evolve(U, -0.5 * eps, force + force2, std::sqrt(eps), noise,
@@ -150,13 +206,16 @@ static void integrateLangevinBauer(GaugeField &U,
 
 	for (int i = 0; i < sweeps; ++i)
 	{
+		action.refresh(U, pRNG);
 		// compute noise and force at U and evolve U' = exp(F) U
 		makeNoise(noise, pRNG);
 		action.deriv(U, force);
+		force = Ta(force);
 		evolve(Uprime, -eps * k1, force, std::sqrt(eps) * k2, noise, U);
 
 		// compute force at U' and evolve U = exp(F') U
 		action.deriv(Uprime, force);
+		force = Ta(force);
 		evolve(U, -eps - k5 * cA * eps * eps, force, std::sqrt(eps), noise, U);
 	}
 }
@@ -182,17 +241,17 @@ void MLangevin::run(Environment &env)
 	// track some observables during simulation
 	std::vector<double> ts, plaq;
 
+	CompositeAction<GaugeField> action;
+
 	// gauge action
-	std::unique_ptr<QCD::Action<GaugeField>> gaugeAction;
 	if (params.gauge_action == "wilson")
-		gaugeAction = std::make_unique<QCD::WilsonGaugeActionR>(params.beta);
+		action.add<QCD::WilsonGaugeActionR>(params.beta);
 	else if (params.gauge_action == "symanzik")
-		gaugeAction = std::make_unique<QCD::SymanzikGaugeActionR>(params.beta);
+		action.add<QCD::SymanzikGaugeActionR>(params.beta);
 	else
 		throw std::runtime_error("unkown gauge action");
 
 	// fermion action
-	std::unique_ptr<QCD::Action<GaugeField>> fermAction;
 	std::unique_ptr<QCD::WilsonFermion<QCD::WilsonImplR>> fermOperator;
 	std::unique_ptr<ConjugateGradient<FermionField>> fermSolver;
 	double solver_tol = 1.0e-8;
@@ -205,21 +264,21 @@ void MLangevin::run(Environment &env)
 		// temporary field
 		GaugeField V(grid);
 
-		double mass = 0.5 * (1.0 / params.kappa_light - 1.0 / 8.0);
+		// NOTE: bare mass is typically negative
+		double mass = 0.5 * (1.0 / params.kappa_light - 8.0);
 		double csw = params.csw;
+		fmt::print("mass = {}, kappa = {}, csw = {}\n", mass,
+		           params.kappa_light, csw);
 
 		fermOperator = std::make_unique<QCD::WilsonCloverFermionR>(
-		    V, *grid, *gridRB, mass, csw);
+		    V, *grid, *gridRB, mass, csw, csw);
 		fermSolver = std::make_unique<ConjugateGradient<FermionField>>(
 		    solver_tol, solver_max_iter);
 
 		// the action retains references to Fermion and solver. So make sure to
 		// keep them alive
-		fermAction = std::make_unique<
-		    QCD::TwoFlavourPseudoFermionAction<QCD::WilsonImplR>>(
+		action.add<QCD::TwoFlavourPseudoFermionAction<QCD::WilsonImplR>>(
 		    *fermOperator, *fermSolver, *fermSolver);
-
-		assert(params.improvement == 0); // improvement not implemented
 	}
 	else
 		throw std::runtime_error("unknown fermion action");
@@ -227,16 +286,17 @@ void MLangevin::run(Environment &env)
 	// rescale step size
 	double delta = params.eps / params.beta;
 
+	std::cout << GridLogMessage << action.LogParameters() << std::endl;
+
 	for (int i = 0; i < params.count; ++i)
 	{
 		// numerical integration of the langevin process
 		if (params.improvement == 0)
-			integrateLangevin(U, *gaugeAction, fermAction.get(), pRNG, delta,
-			                  params.sweeps);
+			integrateLangevin(U, action, pRNG, delta, params.sweeps);
 		else if (params.improvement == 1)
-			integrateLangevinBF(U, *gaugeAction, pRNG, delta, params.sweeps);
+			integrateLangevinBF(U, action, pRNG, delta, params.sweeps);
 		else if (params.improvement == 2)
-			integrateLangevinBauer(U, *gaugeAction, pRNG, delta, params.sweeps);
+			integrateLangevinBauer(U, action, pRNG, delta, params.sweeps);
 		else
 			assert(false);
 

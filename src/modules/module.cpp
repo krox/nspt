@@ -6,6 +6,7 @@
 #include "modules/random_field.h"
 #include "modules/unit_field.h"
 #include "modules/util.h"
+#include "modules/wilson_flow.h"
 
 using namespace Grid;
 
@@ -25,6 +26,8 @@ std::unique_ptr<Module> createModule(const std::string &id, const json &params)
 		return std::make_unique<MWriteField>(params);
 	else if (id == "ReadField")
 		return std::make_unique<MReadField>(params);
+	else if (id == "WilsonFlow")
+		return std::make_unique<MWilsonFlow>(params);
 	else
 		throw std::range_error(fmt::format("Module '{}' unknown.", id));
 }
