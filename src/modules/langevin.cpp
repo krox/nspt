@@ -253,7 +253,7 @@ void MLangevin::run(Environment &env)
 
 	// fermion action
 	std::unique_ptr<QCD::WilsonFermion<QCD::WilsonImplR>> fermOperator;
-	std::unique_ptr<ConjugateGradient<FermionField>> fermSolver;
+	std::unique_ptr<OperatorFunction<FermionField>> fermSolver;
 	double solver_tol = 1.0e-8;
 	int solver_max_iter = 5000;
 	if (params.fermion_action == "")
@@ -261,9 +261,6 @@ void MLangevin::run(Environment &env)
 	}
 	else if (params.fermion_action == "wilson_clover_nf2")
 	{
-		// temporary field
-		GaugeField V(grid);
-
 		// NOTE: bare mass is typically negative
 		double mass = 0.5 * (1.0 / params.kappa_light - 8.0);
 		double csw = params.csw;
@@ -271,7 +268,8 @@ void MLangevin::run(Environment &env)
 		           params.kappa_light, csw);
 
 		fermOperator = std::make_unique<QCD::WilsonCloverFermionR>(
-		    V, *grid, *gridRB, mass, csw, csw);
+		    U, *grid, *gridRB, mass, csw, csw);
+
 		fermSolver = std::make_unique<ConjugateGradient<FermionField>>(
 		    solver_tol, solver_max_iter);
 
@@ -286,7 +284,7 @@ void MLangevin::run(Environment &env)
 	// rescale step size
 	double delta = params.eps / params.beta;
 
-	std::cout << GridLogMessage << action.LogParameters() << std::endl;
+	std::cout << action.LogParameters() << std::endl;
 
 	for (int i = 0; i < params.count; ++i)
 	{
