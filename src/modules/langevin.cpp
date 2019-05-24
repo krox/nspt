@@ -310,6 +310,16 @@ void MLangevin::run(Environment &env)
 		// some logging
 		if (primaryTask())
 			fmt::print("k = {}/{}, plaq = {}\n", i + 1, params.count, p);
+
+		// write config to file
+		if (params.path != "")
+		{
+			std::string filename =
+			    fmt::format("{}/{}{}", params.path, params.prefix, i + 1);
+			if (primaryTask())
+				fmt::print("writing config to {}\n", filename);
+			QCD::NerscIO::writeConfiguration(U, filename, 0, 0);
+		}
 	}
 
 	if (primaryTask() && params.filename != "")

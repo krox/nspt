@@ -9,7 +9,9 @@ class MLangevinParams
   public:
 	// IO
 	std::string field;
-	std::string filename;
+	std::string filename = ""; // one hdf5 with plaquette and such
+	std::string path = "";     // path to store configs in
+	std::string prefix = "";   // prefix for config files
 
 	// Langevin integration
 	double eps = 0.05;
@@ -25,8 +27,8 @@ class MLangevinParams
 
 	// fermion action
 	std::string fermion_action; // wilson_clover_nf2 or "" for quenched
-	double csw;
-	double kappa_light = 0; // kappa=0  ==  mass=infinity  ==  quenced
+	double csw = 1.0;           // csw=1 == tree-level improvement
+	double kappa_light = 0.0;   // kappa=0  ==  mass=infinity  ==  quenced
 };
 
 class MLangevin : public Module
@@ -42,21 +44,30 @@ class MLangevin : public Module
 
 	MLangevin(const json &j)
 	{
-		j.at("epsilon").get_to(params.eps);
-		j.at("beta").get_to(params.beta);
-		j.at("reunit").get_to(params.reunit);
-		j.at("improvement").get_to(params.improvement);
-		j.at("reunit").get_to(params.reunit);
-		j.at("count").get_to(params.count);
+		// io params
 		j.at("field").get_to(params.field);
-		j.at("seed").get_to(params.seed);
 		if (j.count("filename"))
 			j.at("filename").get_to(params.filename);
+		if (j.count("path"))
+			j.at("path").get_to(params.path);
+		if (j.count("prefix"))
+			j.at("prefix").get_to(params.prefix);
+
+		// langevin params
+		j.at("epsilon").get_to(params.eps);
+		j.at("improvement").get_to(params.improvement);
+		j.at("count").get_to(params.count);
+		j.at("seed").get_to(params.seed);
 		if (params.seed == -1)
 			params.seed = std::random_device()();
 		j.at("sweeps").get_to(params.sweeps);
-		j.at("gauge_action").get_to(params.gauge_action);
+		j.at("reunit").get_to(params.reunit);
 
+		// gauge action
+		j.at("gauge_action").get_to(params.gauge_action);
+		j.at("beta").get_to(params.beta);
+
+		// fermion action
 		if (j.count("fermion_action"))
 			j.at("fermion_action").get_to(params.fermion_action);
 		if (j.count("kappa_light"))
