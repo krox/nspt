@@ -1,6 +1,7 @@
 #include "modules/langevin.h"
 
 #include "nspt/grid_utils.h"
+#include "util/gnuplot.h"
 #include "util/hdf5.h"
 #include <Grid/Grid.h>
 
@@ -341,5 +342,10 @@ void MLangevin::run(Environment &env)
 
 		file.createData("ts", ts);
 		file.createData("plaq", plaq);
+	}
+
+	if (primaryTask() && params.plot)
+	{
+		Gnuplot().plotData(plaq, "plaq");
 	}
 }

@@ -29,6 +29,9 @@ class MLangevinParams
 	std::string fermion_action; // wilson_clover_nf2 or "" for quenched
 	double csw = 1.0;           // csw=1 == tree-level improvement
 	double kappa_light = 0.0;   // kappa=0  ==  mass=infinity  ==  quenced
+
+	// misc
+	bool plot = false;
 };
 
 class MLangevin : public Module
@@ -74,6 +77,10 @@ class MLangevin : public Module
 			j.at("kappa_light").get_to(params.kappa_light);
 		if (j.count("csw"))
 			j.at("csw").get_to(params.csw);
+
+		// misc
+		if (j.count("plot"))
+			j.at("plot").get_to(params.plot);
 	}
 
 	virtual void run(Environment &env);
