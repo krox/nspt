@@ -2,6 +2,7 @@
 
 #include "modules/langevin.h"
 #include "modules/lattice_io.h"
+#include "modules/meson_2pt.h"
 #include "modules/pert_langevin.h"
 #include "modules/random_field.h"
 #include "modules/unit_field.h"
@@ -28,6 +29,8 @@ std::unique_ptr<Module> createModule(const std::string &id, const json &params)
 		return std::make_unique<MReadField>(params);
 	else if (id == "WilsonFlow")
 		return std::make_unique<MWilsonFlow>(params);
+	else if (id == "Meson2pt")
+		return std::make_unique<MMeson2pt>(params);
 	else
 		throw std::range_error(fmt::format("Module '{}' unknown.", id));
 }
