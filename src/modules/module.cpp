@@ -1,5 +1,6 @@
 #include "modules/module.h"
 
+#include "modules/gaugefix.h"
 #include "modules/langevin.h"
 #include "modules/lattice_io.h"
 #include "modules/meson_2pt.h"
@@ -31,6 +32,8 @@ std::unique_ptr<Module> createModule(const std::string &id, const json &params)
 		return std::make_unique<MWilsonFlow>(params);
 	else if (id == "Meson2pt")
 		return std::make_unique<MMeson2pt>(params);
+	else if (id == "Gaugefix")
+		return std::make_unique<MGaugefix>(params);
 	else
 		throw std::range_error(fmt::format("Module '{}' unknown.", id));
 }
