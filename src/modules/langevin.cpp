@@ -41,9 +41,9 @@ class CompositeAction : public QCD::Action<GaugeField>
 		if (actions.size() == 1)
 		{
 			actions[0]->deriv(U, dSdU);
+			auto n = norm2(dSdU);
 			if (primaryTask())
-				fmt::print("{} force = {}\n", actions[0]->action_name(),
-				           norm2(dSdU));
+				fmt::print("{} force = {}\n", actions[0]->action_name(), n);
 		}
 		else
 		{
@@ -53,8 +53,9 @@ class CompositeAction : public QCD::Action<GaugeField>
 			for (auto &a : actions)
 			{
 				a->deriv(U, tmp);
+				auto n = norm2(tmp);
 				if (primaryTask())
-					fmt::print("{} force = {}\n", a->action_name(), norm2(tmp));
+					fmt::print("{} force = {}\n", a->action_name(), n);
 				dSdU += tmp;
 			}
 		}
@@ -137,8 +138,9 @@ static void makeNoise(GaugeField &out, GridParallelRNG &pRNG)
 {
 	gaussian(pRNG, out);
 	out = Ta(out);
+	auto n = norm2(out);
 	if (primaryTask())
-		fmt::print("noise force = {}\n", norm2(out));
+		fmt::print("noise force = {}\n", n);
 }
 
 /** NOTE: this does basic non-rescaled Langevin evolution.
