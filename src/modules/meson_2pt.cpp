@@ -25,7 +25,7 @@ static void makePhase(LatticeComplex &phase, const std::vector<int> &mom,
 	for (int mu = 0; mu < (int)mom.size(); ++mu)
 	{
 		LatticeCoordinate(coor, mu);
-		double c = M_PI * 2.0 / grid->FullDimensions()[mu];
+		double c = M_PI * 2.0 / grid->FullDimensions()[mu] * mom[mu];
 		phase += c * (coor - (double)origin[mu]);
 	}
 	phase = exp(phase * Complex(0.0, 1.0));
