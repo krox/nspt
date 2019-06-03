@@ -39,7 +39,12 @@ class CompositeAction : public QCD::Action<GaugeField>
 	void deriv(const GaugeField &U, GaugeField &dSdU) override
 	{
 		if (actions.size() == 1)
+		{
 			actions[0]->deriv(U, dSdU);
+			if (primaryTask())
+				fmt::print("{} force = {}\n", actions[0]->action_name(),
+				           norm2(dSdU));
+		}
 		else
 		{
 			GaugeField tmp(dSdU._grid);
@@ -48,7 +53,8 @@ class CompositeAction : public QCD::Action<GaugeField>
 			for (auto &a : actions)
 			{
 				a->deriv(U, tmp);
-				// fmt::print("{}: {}\n", a->action_name(), norm2(tmp));
+				if (primaryTask())
+					fmt::print("{} force = {}\n", a->action_name(), norm2(tmp));
 				dSdU += tmp;
 			}
 		}
@@ -131,6 +137,8 @@ static void makeNoise(GaugeField &out, GridParallelRNG &pRNG)
 {
 	gaussian(pRNG, out);
 	out = Ta(out);
+	if (primaryTask())
+		fmt::print("noise force = {}\n", norm2(out));
 }
 
 /** NOTE: this does basic non-rescaled Langevin evolution.
@@ -265,8 +273,9 @@ void MLangevin::run(Environment &env)
 		// NOTE: bare mass is typically negative
 		double mass = 0.5 * (1.0 / params.kappa_light - 8.0);
 		double csw = params.csw;
-		fmt::print("mass = {}, kappa = {}, csw = {}\n", mass,
-		           params.kappa_light, csw);
+		if (primaryTask())
+			fmt::print("mass = {}, kappa = {}, csw = {}\n", mass,
+			           params.kappa_light, csw);
 
 		fermOperator = std::make_unique<QCD::WilsonCloverFermionR>(
 		    U, *grid, *gridRB, mass, csw, csw);
@@ -337,6 +346,10 @@ void MLangevin::run(Environment &env)
 
 		file.setAttribute("gauge_action", params.gauge_action);
 		file.setAttribute("beta", params.beta);
+
+		file.setAttribute("fermion_action", params.fermion_action);
+		file.setAttribute("csw", params.csw);
+		file.setAttribute("kappa_light", params.kappa_light);
 
 		file.setAttribute("reunit", params.reunit);
 
