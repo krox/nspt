@@ -248,6 +248,11 @@ void MLangevin::run(Environment &env)
 	GridSerialRNG sRNG;
 	std::vector<int> pseeds({params.seed});
 	pRNG.SeedFixedIntegers(pseeds);
+	if (params.rng != "")
+	{
+		FieldMetaData header;
+		QCD::NerscIO::readRNGState(sRNG, pRNG, header, params.rng);
+	}
 
 	// track some observables during simulation
 	std::vector<double> ts, plaq;
