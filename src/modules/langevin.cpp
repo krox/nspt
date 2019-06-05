@@ -270,7 +270,7 @@ void MLangevin::run(Environment &env)
 	// fermion action
 	std::unique_ptr<QCD::WilsonFermion<QCD::WilsonImplR>> fermOperator;
 	std::unique_ptr<OperatorFunction<FermionField>> fermSolver;
-	double solver_tol = 1.0e-8;
+	double solver_tol = 1.0e-11;
 	int solver_max_iter = 5000;
 	if (params.fermion_action == "")
 	{
