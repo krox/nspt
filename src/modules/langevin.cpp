@@ -2,6 +2,7 @@
 
 #include "nspt/action.h"
 #include "nspt/grid_utils.h"
+#include "qcd/evolution.h"
 #include "util/gnuplot.h"
 #include "util/hdf5.h"
 #include <Grid/Grid.h>
@@ -12,105 +13,6 @@ using namespace util;
 using GaugeField = QCD::LatticeLorentzColourMatrix;
 using GaugeMat = QCD::LatticeColourMatrix;
 using FermionField = QCD::LatticeSpinColourVector;
-
-/** this creates normal distribution with variance <eta^2>=2 */
-static void makeNoise(GaugeField &out, GridParallelRNG &pRNG)
-{
-	gaussian(pRNG, out);
-	out = Ta(out);
-	auto n = norm2(out) / out._grid->gSites();
-	if (primaryTask())
-		fmt::print("noise force = {}\n", n);
-}
-
-/** NOTE: this does basic non-rescaled Langevin evolution.
- * For nice correlations, use eps=eps/beta so that the effective drift is
- * invariant of beta */
-static void integrateLangevin(GaugeField &U, QCD::Action<GaugeField> &action,
-                              GridParallelRNG &pRNG, double eps, int sweeps)
-{
-	conformable(U._grid, pRNG._grid);
-	auto grid = U._grid;
-	GaugeField force(grid);
-	GaugeField noise(grid);
-
-	for (int i = 0; i < sweeps; ++i)
-	{
-		action.refresh(U, pRNG);
-		makeNoise(noise, pRNG);
-		action.deriv(U, force);
-		force = Ta(force);
-		QCD::evolve(U, -eps, force, std::sqrt(eps), noise, U);
-	}
-}
-
-static void integrateLangevinBF(GaugeField &U, QCD::Action<GaugeField> &action,
-                                GridParallelRNG &pRNG, double eps, int sweeps)
-{
-	conformable(U._grid, pRNG._grid);
-	auto grid = U._grid;
-	GaugeField force(grid);
-	GaugeField force2(grid);
-	GaugeField noise(grid);
-	GaugeField Uprime(grid);
-
-	double cA = 3.0; // = Nc = casimir in adjoint representation
-
-	for (int i = 0; i < sweeps; ++i)
-	{
-		action.refresh(U, pRNG);
-		// compute force and noise at U
-		action.deriv(U, force);
-		force = Ta(force);
-		makeNoise(noise, pRNG);
-
-		// evolve U' = exp(F) U
-		QCD::evolve(Uprime, -eps, force, std::sqrt(eps), noise, U);
-
-		// compute force at U'
-		action.deriv(Uprime, force2);
-		force2 = Ta(force2);
-
-		// evolve U = exp(F') U
-		QCD::evolve(U, -0.5 * eps, force + force2, std::sqrt(eps), noise,
-		            eps * eps * cA / 6.0, force2, U);
-	}
-}
-
-static void integrateLangevinBauer(GaugeField &U,
-                                   QCD::Action<GaugeField> &action,
-                                   GridParallelRNG &pRNG, double eps,
-                                   int sweeps)
-{
-	conformable(U._grid, pRNG._grid);
-	auto grid = U._grid;
-	GaugeField force(grid);
-	GaugeField noise(grid);
-	GaugeField Uprime(grid);
-
-	/** see https://arxiv.org/pdf/1303.3279.pdf (up to signs) */
-	constexpr double k1 = 0.08578643762690485; // (2 sqrt(2) - 3) / 2
-	constexpr double k2 = 0.2928932188134524;  // (sqrt(2) - 2) / 2
-	constexpr double k5 = 0.06311327607339286; // (5 - 3 * sqrt(2)) / 12
-
-	double cA = 3.0; // = Nc = casimir in adjoint representation
-
-	for (int i = 0; i < sweeps; ++i)
-	{
-		action.refresh(U, pRNG);
-		// compute noise and force at U and evolve U' = exp(F) U
-		makeNoise(noise, pRNG);
-		action.deriv(U, force);
-		force = Ta(force);
-		QCD::evolve(Uprime, -eps * k1, force, std::sqrt(eps) * k2, noise, U);
-
-		// compute force at U' and evolve U = exp(F') U
-		action.deriv(Uprime, force);
-		force = Ta(force);
-		QCD::evolve(U, -eps - k5 * cA * eps * eps, force, std::sqrt(eps), noise,
-		            U);
-	}
-}
 
 void MLangevin::run(Environment &env)
 {
@@ -148,11 +50,11 @@ void MLangevin::run(Environment &env)
 	{
 		// numerical integration of the langevin process
 		if (params.improvement == 0)
-			integrateLangevin(U, action, pRNG, delta, params.sweeps);
+			QCD::integrateLangevin(U, action, pRNG, delta, params.sweeps);
 		else if (params.improvement == 1)
-			integrateLangevinBF(U, action, pRNG, delta, params.sweeps);
+			QCD::integrateLangevinBF(U, action, pRNG, delta, params.sweeps);
 		else if (params.improvement == 2)
-			integrateLangevinBauer(U, action, pRNG, delta, params.sweeps);
+			QCD::integrateLangevinBauer(U, action, pRNG, delta, params.sweeps);
 		else
 			assert(false);
 

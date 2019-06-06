@@ -7,6 +7,7 @@
 #include "modules/meson_2pt.h"
 #include "modules/pert_langevin.h"
 #include "modules/random_field.h"
+#include "modules/sweep_beta.h"
 #include "modules/unit_field.h"
 #include "modules/util.h"
 #include "modules/wilson_flow.h"
@@ -37,6 +38,8 @@ std::unique_ptr<Module> createModule(const std::string &id, const json &params)
 		return std::make_unique<MMeson2pt>(params);
 	else if (id == "Gaugefix")
 		return std::make_unique<MGaugefix>(params);
+	else if (id == "SweepBeta")
+		return std::make_unique<MSweepBeta>(params);
 	else
 		throw std::range_error(fmt::format("Module '{}' unknown.", id));
 }

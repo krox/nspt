@@ -30,7 +30,7 @@ include_directories(CLI11/include)
 
 find_package(HDF5 REQUIRED)
 
-file(GLOB files_cpp "src/util/*.cpp" "src/nspt/*.cpp" "src/modules/*.cpp")
+file(GLOB files_cpp "src/util/*.cpp" "src/qcd/*.cpp" "src/nspt/*.cpp" "src/modules/*.cpp")
 
 add_executable(app src/app.cpp ${files_cpp})
 target_include_directories(app PRIVATE ${HDF5_INCLUDE_DIRS})

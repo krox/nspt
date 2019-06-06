@@ -95,63 +95,6 @@ util::span<const double> asSpan(const iSeries<T, N> &a)
 }
 } // namespace Grid
 
-namespace Grid {
-namespace QCD {
-
-/** compute V = exp(aX)U. aliasing is allowed */
-inline void evolve(LatticeGaugeField &V, double a, const LatticeGaugeField &X,
-                   const LatticeGaugeField &U)
-{
-	conformable(V._grid, X._grid);
-	conformable(V._grid, U._grid);
-
-	parallel_for(int ss = 0; ss < V._grid->oSites(); ss++)
-	{
-		vLorentzColourMatrix tmp = a * X._odata[ss];
-		for (int mu = 0; mu < 4; ++mu)
-			V._odata[ss](mu) = Exponentiate(tmp(mu), 1.0) * U._odata[ss](mu);
-	}
-}
-
-/** compute V = exp(aX +bY)U. aliasing is allowed */
-inline void evolve(LatticeGaugeField &V, double a, const LatticeGaugeField &X,
-                   double b, const LatticeGaugeField &Y,
-                   const LatticeGaugeField &U)
-{
-	conformable(V._grid, X._grid);
-	conformable(V._grid, Y._grid);
-	conformable(V._grid, U._grid);
-
-	parallel_for(int ss = 0; ss < V._grid->oSites(); ss++)
-	{
-		vLorentzColourMatrix tmp = a * X._odata[ss] + b * Y._odata[ss];
-		for (int mu = 0; mu < 4; ++mu)
-			V._odata[ss](mu) = Exponentiate(tmp(mu), 1.0) * U._odata[ss](mu);
-	}
-}
-
-/** compute V = exp(aX +bY + cZ))U. aliasing is allowed */
-inline void evolve(LatticeGaugeField &V, double a, const LatticeGaugeField &X,
-                   double b, const LatticeGaugeField &Y, double c,
-                   const LatticeGaugeField &Z, const LatticeGaugeField &U)
-{
-	conformable(V._grid, X._grid);
-	conformable(V._grid, Y._grid);
-	conformable(V._grid, Z._grid);
-	conformable(V._grid, U._grid);
-
-	parallel_for(int ss = 0; ss < V._grid->oSites(); ss++)
-	{
-		vLorentzColourMatrix tmp =
-		    a * X._odata[ss] + b * Y._odata[ss] + c * Z._odata[ss];
-		for (int mu = 0; mu < 4; ++mu)
-			V._odata[ss](mu) = Exponentiate(tmp(mu), 1.0) * U._odata[ss](mu);
-	}
-}
-
-} // namespace QCD
-} // namespace Grid
-
 namespace fmt {
 
 template <typename T> struct formatter<std::complex<T>> : formatter<T>

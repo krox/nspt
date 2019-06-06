@@ -2,6 +2,7 @@
 
 #include "nspt/action.h"
 #include "nspt/grid_utils.h"
+#include "qcd/evolution.h"
 #include "util/gnuplot.h"
 #include "util/hdf5.h"
 #include <Grid/Grid.h>
@@ -41,23 +42,13 @@ void MHMC::run(Environment &env)
 	CompositeAction<GaugeField> action(actionParams, grid, gridRB);
 	std::cout << action.LogParameters() << std::endl;
 
+	// rescale step size
+	double delta = params.eps / std::sqrt(action.beta);
+
 	for (int i = 0; i < params.count; ++i)
 	{
 		// numerical integration of the hmc process
-		for (int iter = 0; iter < params.sweeps; ++iter)
-		{
-			// new pseudo-fermions and momenta
-			action.refresh(U, pRNG);
-			gaussian(pRNG, mom);
-			mom = std::sqrt(0.5) * Ta(mom); // TODO: right scale here?
-
-			// leap-frog integration
-			QCD::evolve(U, 0.5 * params.eps, mom, U);
-			action.deriv(U, force);
-			force *= -params.eps;
-			mom += force;
-			QCD::evolve(U, 0.5 * params.eps, mom, U);
-		}
+		QCD::integrateHMC(U, action, pRNG, delta, params.sweeps);
 
 		// project to SU(3) to fix rounding errors
 		ProjectOnGroup(U);
