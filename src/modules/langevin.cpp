@@ -1,5 +1,6 @@
 #include "modules/langevin.h"
 
+#include "nspt/action.h"
 #include "nspt/grid_utils.h"
 #include "util/gnuplot.h"
 #include "util/hdf5.h"
@@ -7,77 +8,6 @@
 
 using namespace Grid;
 using namespace util;
-
-template <typename GaugeField>
-class CompositeAction : public QCD::Action<GaugeField>
-{
-	std::vector<std::unique_ptr<QCD::Action<GaugeField>>> actions;
-
-  public:
-	CompositeAction() = default;
-	~CompositeAction() override = default;
-
-	template <typename A, typename... Args> void add(Args &&... args)
-	{
-		actions.push_back(std::make_unique<A>(std::forward<Args>(args)...));
-	}
-
-	void refresh(const GaugeField &U, GridParallelRNG &pRNG) override
-	{
-		for (auto &a : actions)
-			a->refresh(U, pRNG);
-	}
-
-	RealD S(const GaugeField &U) override
-	{
-		RealD s = 0;
-		for (auto &a : actions)
-			s += a->S(U);
-		return s;
-	}
-
-	void deriv(const GaugeField &U, GaugeField &dSdU) override
-	{
-		if (actions.size() == 1)
-		{
-			actions[0]->deriv(U, dSdU);
-			auto n = norm2(dSdU);
-			if (primaryTask())
-				fmt::print("{} force = {}\n", actions[0]->action_name(), n);
-		}
-		else
-		{
-			GaugeField tmp(dSdU._grid);
-			dSdU = 0.0;
-
-			for (auto &a : actions)
-			{
-				a->deriv(U, tmp);
-				auto n = norm2(tmp);
-				if (primaryTask())
-					fmt::print("{} force = {}\n", a->action_name(), n);
-				dSdU += tmp;
-			}
-		}
-	}
-
-	std::string action_name() override
-	{
-		std::string r = "[";
-		for (auto &a : actions)
-			r += a->action_name() + ", ";
-		r += "]";
-		return r;
-	}
-
-	std::string LogParameters() override
-	{
-		std::string r = "";
-		for (auto &a : actions)
-			r += a->LogParameters();
-		return r;
-	}
-};
 
 using GaugeField = QCD::LatticeLorentzColourMatrix;
 using GaugeMat = QCD::LatticeColourMatrix;
@@ -138,7 +68,7 @@ static void makeNoise(GaugeField &out, GridParallelRNG &pRNG)
 {
 	gaussian(pRNG, out);
 	out = Ta(out);
-	auto n = norm2(out);
+	auto n = norm2(out) / out._grid->gSites();
 	if (primaryTask())
 		fmt::print("noise force = {}\n", n);
 }
@@ -257,51 +187,11 @@ void MLangevin::run(Environment &env)
 	// track some observables during simulation
 	std::vector<double> ts, plaq;
 
-	CompositeAction<GaugeField> action;
-
-	// gauge action
-	if (params.gauge_action == "wilson")
-		action.add<QCD::WilsonGaugeActionR>(params.beta);
-	else if (params.gauge_action == "symanzik")
-		action.add<QCD::SymanzikGaugeActionR>(params.beta);
-	else
-		throw std::runtime_error("unkown gauge action");
-
-	// fermion action
-	std::unique_ptr<QCD::WilsonFermion<QCD::WilsonImplR>> fermOperator;
-	std::unique_ptr<OperatorFunction<FermionField>> fermSolver;
-	double solver_tol = 1.0e-11;
-	int solver_max_iter = 5000;
-	if (params.fermion_action == "")
-	{
-	}
-	else if (params.fermion_action == "wilson_clover_nf2")
-	{
-		// NOTE: bare mass is typically negative
-		double mass = 0.5 * (1.0 / params.kappa_light - 8.0);
-		double csw = params.csw;
-		if (primaryTask())
-			fmt::print("mass = {}, kappa = {}, csw = {}\n", mass,
-			           params.kappa_light, csw);
-
-		fermOperator = std::make_unique<QCD::WilsonCloverFermionR>(
-		    U, *grid, *gridRB, mass, csw, csw);
-
-		fermSolver = std::make_unique<ConjugateGradient<FermionField>>(
-		    solver_tol, solver_max_iter);
-
-		// the action retains references to Fermion and solver. So make sure to
-		// keep them alive
-		action.add<QCD::TwoFlavourPseudoFermionAction<QCD::WilsonImplR>>(
-		    *fermOperator, *fermSolver, *fermSolver);
-	}
-	else
-		throw std::runtime_error("unknown fermion action");
+	CompositeAction<GaugeField> action(actionParams, grid, gridRB);
+	std::cout << action.LogParameters() << std::endl;
 
 	// rescale step size
-	double delta = params.eps / params.beta;
-
-	std::cout << action.LogParameters() << std::endl;
+	double delta = params.eps / action.beta;
 
 	for (int i = 0; i < params.count; ++i)
 	{
@@ -360,12 +250,12 @@ void MLangevin::run(Environment &env)
 		file.setAttribute("eps", params.eps);
 		file.setAttribute("improvement", params.improvement);
 
-		file.setAttribute("gauge_action", params.gauge_action);
-		file.setAttribute("beta", params.beta);
+		file.setAttribute("gauge_action", action.gauge_action);
+		file.setAttribute("beta", action.beta);
 
-		file.setAttribute("fermion_action", params.fermion_action);
-		file.setAttribute("csw", params.csw);
-		file.setAttribute("kappa_light", params.kappa_light);
+		file.setAttribute("fermion_action", action.fermion_action);
+		file.setAttribute("csw", action.csw);
+		file.setAttribute("kappa_light", action.kappa_light);
 
 		file.setAttribute("reunit", params.reunit);
 

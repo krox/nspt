@@ -22,15 +22,6 @@ class MLangevinParams
 	int reunit = 1;
 	std::string rng = ""; // file to read rng state from
 
-	// gauge action
-	std::string gauge_action; // wilson, symanzik
-	double beta = 0;
-
-	// fermion action
-	std::string fermion_action; // wilson_clover_nf2 or "" for quenched
-	double csw = 1.0;           // csw=1 == tree-level improvement
-	double kappa_light = 0.0;   // kappa=0  ==  mass=infinity  ==  quenced
-
 	// misc
 	bool plot = false;
 };
@@ -45,6 +36,7 @@ class MLangevin : public Module
 	}
 
 	MLangevinParams params;
+	json actionParams;
 
 	MLangevin(const json &j)
 	{
@@ -71,16 +63,7 @@ class MLangevin : public Module
 			j.at("rng").get_to(params.rng);
 
 		// gauge action
-		j.at("gauge_action").get_to(params.gauge_action);
-		j.at("beta").get_to(params.beta);
-
-		// fermion action
-		if (j.count("fermion_action"))
-			j.at("fermion_action").get_to(params.fermion_action);
-		if (j.count("kappa_light"))
-			j.at("kappa_light").get_to(params.kappa_light);
-		if (j.count("csw"))
-			j.at("csw").get_to(params.csw);
+		actionParams = j.at("action");
 
 		// misc
 		if (j.count("plot"))
