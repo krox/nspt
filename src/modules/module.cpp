@@ -1,6 +1,7 @@
 #include "modules/module.h"
 
 #include "modules/gaugefix.h"
+#include "modules/hmc.h"
 #include "modules/langevin.h"
 #include "modules/lattice_io.h"
 #include "modules/meson_2pt.h"
@@ -20,6 +21,8 @@ std::unique_ptr<Module> createModule(const std::string &id, const json &params)
 		return std::make_unique<MRandomField>(params);
 	else if (id == "Langevin")
 		return std::make_unique<MLangevin>(params);
+	else if (id == "HMC")
+		return std::make_unique<MHMC>(params);
 	else if (id == "PertLangevin")
 		return std::make_unique<MPertLangevin>(params);
 	else if (id == "DeleteObject")
