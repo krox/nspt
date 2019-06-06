@@ -332,7 +332,7 @@ void MLangevin::run(Environment &env)
 		if (params.path != "")
 		{
 			std::string filename =
-			    fmt::format("{}/{}{}", params.path, params.prefix, i + 1);
+			    fmt::format("{}/{}{}.cnf", params.path, params.prefix, i + 1);
 			if (primaryTask())
 				fmt::print("writing config to {}.nersc\n", filename);
 			QCD::NerscIO::writeConfiguration(U, filename, 0, 0);
@@ -340,8 +340,8 @@ void MLangevin::run(Environment &env)
 		// write config to file
 		if (params.path != "")
 		{
-			std::string filename = fmt::format("{}/{}{}.rng.nersc", params.path,
-			                                   params.prefix, i + 1);
+			std::string filename =
+			    fmt::format("{}/{}{}.rng", params.path, params.prefix, i + 1);
 			if (primaryTask())
 				fmt::print("writing rng to {}\n", filename);
 			QCD::NerscIO::writeRNGState(sRNG, pRNG, filename);
