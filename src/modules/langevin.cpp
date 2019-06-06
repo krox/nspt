@@ -13,56 +13,6 @@ using GaugeField = QCD::LatticeLorentzColourMatrix;
 using GaugeMat = QCD::LatticeColourMatrix;
 using FermionField = QCD::LatticeSpinColourVector;
 
-/** compute V = exp(aX)U. aliasing is allowed */
-[[maybe_unused]] static void evolve(GaugeField &V, double a,
-                                    const GaugeField &X, const GaugeField &U)
-{
-	conformable(V._grid, X._grid);
-	conformable(V._grid, U._grid);
-
-	parallel_for(int ss = 0; ss < V._grid->oSites(); ss++)
-	{
-		QCD::vLorentzColourMatrix tmp = a * X._odata[ss];
-		for (int mu = 0; mu < 4; ++mu)
-			V._odata[ss](mu) = Exponentiate(tmp(mu), 1.0) * U._odata[ss](mu);
-	}
-}
-
-/** compute V = exp(aX +bY)U. aliasing is allowed */
-static void evolve(GaugeField &V, double a, const GaugeField &X, double b,
-                   const GaugeField &Y, const GaugeField &U)
-{
-	conformable(V._grid, X._grid);
-	conformable(V._grid, Y._grid);
-	conformable(V._grid, U._grid);
-
-	parallel_for(int ss = 0; ss < V._grid->oSites(); ss++)
-	{
-		QCD::vLorentzColourMatrix tmp = a * X._odata[ss] + b * Y._odata[ss];
-		for (int mu = 0; mu < 4; ++mu)
-			V._odata[ss](mu) = Exponentiate(tmp(mu), 1.0) * U._odata[ss](mu);
-	}
-}
-
-/** compute V = exp(aX +bY + cZ))U. aliasing is allowed */
-static void evolve(GaugeField &V, double a, const GaugeField &X, double b,
-                   const GaugeField &Y, double c, const GaugeField &Z,
-                   const GaugeField &U)
-{
-	conformable(V._grid, X._grid);
-	conformable(V._grid, Y._grid);
-	conformable(V._grid, Z._grid);
-	conformable(V._grid, U._grid);
-
-	parallel_for(int ss = 0; ss < V._grid->oSites(); ss++)
-	{
-		QCD::vLorentzColourMatrix tmp =
-		    a * X._odata[ss] + b * Y._odata[ss] + c * Z._odata[ss];
-		for (int mu = 0; mu < 4; ++mu)
-			V._odata[ss](mu) = Exponentiate(tmp(mu), 1.0) * U._odata[ss](mu);
-	}
-}
-
 /** this creates normal distribution with variance <eta^2>=2 */
 static void makeNoise(GaugeField &out, GridParallelRNG &pRNG)
 {
@@ -90,7 +40,7 @@ static void integrateLangevin(GaugeField &U, QCD::Action<GaugeField> &action,
 		makeNoise(noise, pRNG);
 		action.deriv(U, force);
 		force = Ta(force);
-		evolve(U, -eps, force, std::sqrt(eps), noise, U);
+		QCD::evolve(U, -eps, force, std::sqrt(eps), noise, U);
 	}
 }
 
@@ -115,15 +65,15 @@ static void integrateLangevinBF(GaugeField &U, QCD::Action<GaugeField> &action,
 		makeNoise(noise, pRNG);
 
 		// evolve U' = exp(F) U
-		evolve(Uprime, -eps, force, std::sqrt(eps), noise, U);
+		QCD::evolve(Uprime, -eps, force, std::sqrt(eps), noise, U);
 
 		// compute force at U'
 		action.deriv(Uprime, force2);
 		force2 = Ta(force2);
 
 		// evolve U = exp(F') U
-		evolve(U, -0.5 * eps, force + force2, std::sqrt(eps), noise,
-		       eps * eps * cA / 6.0, force2, U);
+		QCD::evolve(U, -0.5 * eps, force + force2, std::sqrt(eps), noise,
+		            eps * eps * cA / 6.0, force2, U);
 	}
 }
 
@@ -152,12 +102,13 @@ static void integrateLangevinBauer(GaugeField &U,
 		makeNoise(noise, pRNG);
 		action.deriv(U, force);
 		force = Ta(force);
-		evolve(Uprime, -eps * k1, force, std::sqrt(eps) * k2, noise, U);
+		QCD::evolve(Uprime, -eps * k1, force, std::sqrt(eps) * k2, noise, U);
 
 		// compute force at U' and evolve U = exp(F') U
 		action.deriv(Uprime, force);
 		force = Ta(force);
-		evolve(U, -eps - k5 * cA * eps * eps, force, std::sqrt(eps), noise, U);
+		QCD::evolve(U, -eps - k5 * cA * eps * eps, force, std::sqrt(eps), noise,
+		            U);
 	}
 }
 
