@@ -39,7 +39,8 @@ class MSweepBeta : public Module
 	MSweepBeta(const json &j)
 	{
 		j.at("grid").get_to(params.grid);
-		j.at("epsilon").get_to(params.eps);
+		if (j.count("epsilon"))
+			j.at("epsilon").get_to(params.eps);
 		j.at("beta_max").get_to(params.beta_max);
 		j.at("beta_steps").get_to(params.beta_steps);
 		j.at("method").get_to(params.method);
