@@ -14,44 +14,6 @@ using GaugeField = QCD::LatticeLorentzColourMatrix;
 using GaugeMat = QCD::LatticeColourMatrix;
 using FermionField = QCD::LatticeSpinColourVector;
 
-static void quenchedHeatbath(GaugeField &U, double beta, GridSerialRNG &sRNG,
-                             GridParallelRNG &pRNG, int sweeps)
-{
-	conformable(U._grid, pRNG._grid);
-	auto grid = U._grid;
-	GaugeMat link(grid);
-	GaugeMat staple(grid);
-
-	// init checkerboard
-	QCD::LatticeInteger mask(grid);
-	parallel_for(int ss = 0; ss < grid->oSites(); ++ss)
-	{
-		std::vector<int> co;
-		grid->oCoorFromOindex(co, ss);
-		int s = 0;
-		for (int mu = 0; mu < QCD::Nd; ++mu)
-			s += co[mu];
-		mask._odata[ss] = s % 2;
-	}
-
-	for (int k = 0; k < sweeps; ++k)
-	{
-		for (int cb = 0; cb < 2; ++cb, mask = Integer(1) - mask)
-			for (int mu = 0; mu < QCD::Nd; ++mu)
-			{
-				QCD::ColourWilsonLoops::Staple(staple, U, mu);
-				link = QCD::peekLorentz(U, mu);
-
-				for (int sg = 0; sg < QCD::SU3::su2subgroups(); sg++)
-					QCD::SU3::SubGroupHeatBath(sRNG, pRNG, beta, link, staple,
-					                           sg, 20, mask);
-
-				QCD::pokeLorentz(U, link, mu);
-			}
-		ProjectOnGroup(U);
-	}
-}
-
 void MSweepBeta::run(Environment &env)
 {
 	// gauge field
@@ -67,8 +29,30 @@ void MSweepBeta::run(Environment &env)
 	GridSerialRNG sRNG;
 	sRNG.SeedFixedIntegers({params.seed + 1});
 
+	// choose integration scheme
+	using Integrator =
+	    void (*)(GaugeField &, CompositeAction<GaugeField> &, GridSerialRNG &,
+	             GridParallelRNG &, double, int, double &, double &);
+	Integrator integrator = nullptr;
+	if (params.method == "LangevinEuler")
+		integrator = &QCD::integrateLangevin;
+	else if (params.method == "LangevinBF")
+		integrator = &QCD::integrateLangevinBF;
+	else if (params.method == "LangevinBauer")
+		integrator = &QCD::integrateLangevinBauer;
+	else if (params.method == "HMC")
+		integrator = &QCD::integrateHMC;
+	else if (params.method == "heatbath")
+	{
+		assert(actionParams.at("gauge_action") == "wilson");
+		assert(actionParams.at("fermion_action") == "");
+		integrator = &QCD::quenchedHeatbath;
+	}
+	else
+		throw std::runtime_error("unknown integrator");
+
 	// track some observables during simulation
-	std::vector<double> bs, plaq;
+	std::vector<double> bs, plaq, loop;
 
 	for (int k = 0; k < params.beta_steps; ++k)
 	{
@@ -78,44 +62,30 @@ void MSweepBeta::run(Environment &env)
 		std::cout << action.LogParameters() << std::endl;
 
 		// rescale step size
-		double delta = params.eps / action.beta;
+		double delta = 0.0 / 0.0;
+		if (params.method == "HMC")
+			delta = params.eps / std::sqrt(action.beta);
+		else
+			delta = params.eps / action.beta;
 
-		double p = 0.0;
+		double p, l;
 
-		for (int i = 0; i < params.sweeps; ++i)
-		{
-			if (params.method == "LangevinEuler")
-				QCD::integrateLangevin(U, action, pRNG, delta, 1);
-			else if (params.method == "LangevinBF")
-				QCD::integrateLangevinBF(U, action, pRNG, delta, 1);
-			else if (params.method == "LangevinBauer")
-				QCD::integrateLangevinBauer(U, action, pRNG, delta, 1);
-			else if (params.method == "HMC")
-				QCD::integrateHMC(U, action, pRNG, delta, 1);
-			else if (params.method == "heatbath")
-				quenchedHeatbath(U, action.beta, sRNG, pRNG, 1);
-			else
-				assert(false);
+		// first half of sweeps for thermalization
+		integrator(U, action, sRNG, pRNG, delta, params.sweeps / 2, p, l);
 
-			ProjectOnGroup(U);
+		// second half with measurements
+		integrator(U, action, sRNG, pRNG, delta, params.sweeps / 2, p, l);
 
-			// measurements
-			if (i >= params.sweeps / 2)
-				p += QCD::ColourWilsonLoops::avgPlaquette(U);
-		}
-
-		p /= (params.sweeps + 1) / 2;
-
+		// log results
 		bs.push_back(action.beta);
 		plaq.push_back(p);
-
-		// some logging
+		loop.push_back(l);
 		if (primaryTask())
-			fmt::print("beta = {}, plaq = {}\n", action.beta, p);
+			fmt::print("beta = {}, plaq = {}, loop = {}\n", action.beta, p, l);
 	}
 
 	if (primaryTask() && params.plot)
 	{
-		Gnuplot().plotData(bs, plaq, "plaq");
+		Gnuplot().plotData(bs, plaq, "plaq").plotData(bs, loop, "loop");
 	}
 }

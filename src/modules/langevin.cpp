@@ -49,18 +49,18 @@ void MLangevin::run(Environment &env)
 	for (int i = 0; i < params.count; ++i)
 	{
 		// numerical integration of the langevin process
+		double _;
 		if (params.improvement == 0)
-			QCD::integrateLangevin(U, action, pRNG, delta, params.sweeps);
+			QCD::integrateLangevin(U, action, sRNG, pRNG, delta, params.sweeps,
+			                       _, _);
 		else if (params.improvement == 1)
-			QCD::integrateLangevinBF(U, action, pRNG, delta, params.sweeps);
+			QCD::integrateLangevinBF(U, action, sRNG, pRNG, delta,
+			                         params.sweeps, _, _);
 		else if (params.improvement == 2)
-			QCD::integrateLangevinBauer(U, action, pRNG, delta, params.sweeps);
+			QCD::integrateLangevinBauer(U, action, sRNG, pRNG, delta,
+			                            params.sweeps, _, _);
 		else
 			assert(false);
-
-		// project to SU(3) in case of rounding errors
-		if (params.reunit)
-			ProjectOnGroup(U);
 
 		// measurements
 		double p = QCD::ColourWilsonLoops::avgPlaquette(U);
@@ -109,8 +109,6 @@ void MLangevin::run(Environment &env)
 		file.setAttribute("fermion_action", action.fermion_action);
 		file.setAttribute("csw", action.csw);
 		file.setAttribute("kappa_light", action.kappa_light);
-
-		file.setAttribute("reunit", params.reunit);
 
 		file.createData("ts", ts);
 		file.createData("plaq", plaq);

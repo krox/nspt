@@ -2,6 +2,7 @@
 #define QCD_EVOLUTION_H
 
 #include "Grid/Grid.h"
+#include "nspt/action.h"
 
 namespace Grid {
 namespace QCD {
@@ -25,20 +26,33 @@ void makeNoise(LatticeGaugeField &out, GridParallelRNG &pRNG);
 /** NOTE: this does basic non-rescaled Langevin evolution.
  * For nice correlations, use eps=eps/beta so that the effective drift is
  * invariant of beta */
-void integrateLangevin(LatticeGaugeField &U, Action<LatticeGaugeField> &action,
-                       GridParallelRNG &pRNG, double eps, int sweeps);
+void integrateLangevin(LatticeGaugeField &U,
+                       CompositeAction<LatticeGaugeField> &action,
+                       GridSerialRNG &sRNG, GridParallelRNG &pRNG, double eps,
+                       int sweeps, double &plaq, double &loop);
 
 void integrateLangevinBF(LatticeGaugeField &U,
-                         Action<LatticeGaugeField> &action,
-                         GridParallelRNG &pRNG, double eps, int sweeps);
+                         CompositeAction<LatticeGaugeField> &action,
+                         GridSerialRNG &sRNG, GridParallelRNG &pRNG, double eps,
+                         int sweeps, double &plaq, double &loop);
 
 void integrateLangevinBauer(LatticeGaugeField &U,
-                            Action<LatticeGaugeField> &action,
-                            GridParallelRNG &pRNG, double eps, int sweeps);
+                            CompositeAction<LatticeGaugeField> &action,
+                            GridSerialRNG &sRNG, GridParallelRNG &pRNG,
+                            double eps, int sweeps, double &plaq, double &loop);
 
 /** Hybrid-Monte-Carlo */
-void integrateHMC(LatticeGaugeField &U, Action<LatticeGaugeField> &action,
-                  GridParallelRNG &pRNG, double eps, int sweeps);
+void integrateHMC(LatticeGaugeField &U,
+                  CompositeAction<LatticeGaugeField> &action,
+                  GridSerialRNG &sRNG, GridParallelRNG &pRNG, double eps,
+                  int sweeps, double &plaq, double &loop);
+
+/** quenched SU(3) heatbath. Not actually an "integrator", but useful to have
+ * the same interface */
+void quenchedHeatbath(LatticeGaugeField &U,
+                      CompositeAction<LatticeGaugeField> &action,
+                      GridSerialRNG &sRNG, GridParallelRNG &pRNG, double,
+                      int sweeps, double &plaq, double &loop);
 
 } // namespace QCD
 } // namespace Grid

@@ -19,7 +19,6 @@ class MLangevinParams
 	int count = 1000;
 	int seed = -1;
 	int sweeps = 1;
-	int reunit = 1;
 	std::string rng = ""; // file to read rng state from
 
 	// misc
@@ -58,7 +57,6 @@ class MLangevin : public Module
 		if (params.seed == -1)
 			params.seed = std::random_device()();
 		j.at("sweeps").get_to(params.sweeps);
-		j.at("reunit").get_to(params.reunit);
 		if (j.count("rng"))
 			j.at("rng").get_to(params.rng);
 

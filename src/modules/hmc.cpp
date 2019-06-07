@@ -48,7 +48,8 @@ void MHMC::run(Environment &env)
 	for (int i = 0; i < params.count; ++i)
 	{
 		// numerical integration of the hmc process
-		QCD::integrateHMC(U, action, pRNG, delta, params.sweeps);
+		double _;
+		QCD::integrateHMC(U, action, sRNG, pRNG, delta, params.sweeps, _, _);
 
 		// project to SU(3) to fix rounding errors
 		ProjectOnGroup(U);
