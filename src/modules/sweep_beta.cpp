@@ -29,28 +29,6 @@ void MSweepBeta::run(Environment &env)
 	GridSerialRNG sRNG;
 	sRNG.SeedFixedIntegers({params.seed + 1});
 
-	// choose integration scheme
-	using Integrator =
-	    void (*)(GaugeField &, CompositeAction<GaugeField> &, GridSerialRNG &,
-	             GridParallelRNG &, double, int, double &, double &);
-	Integrator integrator = nullptr;
-	if (params.method == "LangevinEuler")
-		integrator = &QCD::integrateLangevin;
-	else if (params.method == "LangevinBF")
-		integrator = &QCD::integrateLangevinBF;
-	else if (params.method == "LangevinBauer")
-		integrator = &QCD::integrateLangevinBauer;
-	else if (params.method == "HMC")
-		integrator = &QCD::integrateHMC;
-	else if (params.method == "heatbath")
-	{
-		assert(actionParams.at("gauge_action") == "wilson");
-		assert(actionParams.at("fermion_action") == "");
-		integrator = &QCD::quenchedHeatbath;
-	}
-	else
-		throw std::runtime_error("unknown integrator");
-
 	// track some observables during simulation
 	std::vector<double> bs, plaq, loop;
 
@@ -60,21 +38,16 @@ void MSweepBeta::run(Environment &env)
 		actionParams["beta"] = params.beta_max / params.beta_steps * (k + 1);
 		CompositeAction<GaugeField> action(actionParams, grid, gridRB);
 		std::cout << action.LogParameters() << std::endl;
-
-		// rescale step size
-		double delta = 0.0 / 0.0;
-		if (params.method == "HMC")
-			delta = params.eps / std::sqrt(action.beta);
-		else
-			delta = params.eps / action.beta;
-
-		double p, l;
+		auto integrator = makeQCDIntegrator(action, integratorParams);
 
 		// first half of sweeps for thermalization
-		integrator(U, action, sRNG, pRNG, delta, params.sweeps / 2, p, l);
+		integrator->run(U, sRNG, pRNG, params.sweeps / 2);
 
 		// second half with measurements
-		integrator(U, action, sRNG, pRNG, delta, params.sweeps / 2, p, l);
+		integrator->resetStats();
+		integrator->run(U, sRNG, pRNG, params.sweeps / 2);
+		double p = mean(integrator->plaq_history);
+		double l = mean(integrator->loop_history);
 
 		// log results
 		bs.push_back(action.beta);

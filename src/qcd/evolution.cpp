@@ -65,38 +65,35 @@ void makeNoise(LatticeGaugeField &out, GridParallelRNG &pRNG)
 		fmt::print("noise force = {}\n", n);
 }
 
-void integrateLangevin(LatticeGaugeField &U,
-                       CompositeAction<LatticeGaugeField> &action,
-                       GridSerialRNG &, GridParallelRNG &pRNG, double eps,
-                       int sweeps, double &plaq, double &loop)
+} // namespace QCD
+} // namespace Grid
+
+using namespace Grid;
+using namespace QCD;
+
+void LangevinEuler::run(LatticeGaugeField &U, GridSerialRNG &,
+                        GridParallelRNG &pRNG, int sweeps)
 {
 	conformable(U._grid, pRNG._grid);
 	auto grid = U._grid;
 	LatticeGaugeField force(grid);
 	LatticeGaugeField noise(grid);
 
-	plaq = 0.0;
-	loop = 0.0;
 	for (int i = 0; i < sweeps; ++i)
 	{
 		action.refresh(U, pRNG);
 		makeNoise(noise, pRNG);
 		action.deriv(U, force);
 		force = Ta(force);
-		evolve(U, -eps, force, std::sqrt(eps), noise, U);
+		evolve(U, -delta, force, std::sqrt(delta), noise, U);
 
 		ProjectOnGroup(U);
-		plaq += QCD::ColourWilsonLoops::avgPlaquette(U);
-		loop += real(QCD::ColourWilsonLoops::avgPolyakovLoop(U));
+		trackObservables(U);
 	}
-	plaq /= sweeps;
-	loop /= sweeps;
 }
 
-void integrateLangevinBF(LatticeGaugeField &U,
-                         CompositeAction<LatticeGaugeField> &action,
-                         GridSerialRNG &, GridParallelRNG &pRNG, double eps,
-                         int sweeps, double &plaq, double &loop)
+void LangevinBF::run(LatticeGaugeField &U, GridSerialRNG &,
+                     GridParallelRNG &pRNG, int sweeps)
 {
 	conformable(U._grid, pRNG._grid);
 	auto grid = U._grid;
@@ -107,8 +104,6 @@ void integrateLangevinBF(LatticeGaugeField &U,
 
 	double cA = 3.0; // = Nc = casimir in adjoint representation
 
-	plaq = 0.0;
-	loop = 0.0;
 	for (int i = 0; i < sweeps; ++i)
 	{
 		action.refresh(U, pRNG);
@@ -118,28 +113,23 @@ void integrateLangevinBF(LatticeGaugeField &U,
 		makeNoise(noise, pRNG);
 
 		// evolve U' = exp(F) U
-		evolve(Uprime, -eps, force, std::sqrt(eps), noise, U);
+		evolve(Uprime, -delta, force, std::sqrt(delta), noise, U);
 
 		// compute force at U'
 		action.deriv(Uprime, force2);
 		force2 = Ta(force2);
 
 		// evolve U = exp(F') U
-		evolve(U, -0.5 * eps, force + force2, std::sqrt(eps), noise,
-		       eps * eps * cA / 6.0, force2, U);
+		evolve(U, -0.5 * delta, force + force2, std::sqrt(delta), noise,
+		       delta * delta * cA / 6.0, force2, U);
 
 		ProjectOnGroup(U);
-		plaq += QCD::ColourWilsonLoops::avgPlaquette(U);
-		loop += real(QCD::ColourWilsonLoops::avgPolyakovLoop(U));
+		trackObservables(U);
 	}
-	plaq /= sweeps;
-	loop /= sweeps;
 }
 
-void integrateLangevinBauer(LatticeGaugeField &U,
-                            CompositeAction<LatticeGaugeField> &action,
-                            GridSerialRNG &, GridParallelRNG &pRNG, double eps,
-                            int sweeps, double &plaq, double &loop)
+void LangevinBauer::run(LatticeGaugeField &U, GridSerialRNG &,
+                        GridParallelRNG &pRNG, int sweeps)
 {
 	conformable(U._grid, pRNG._grid);
 	auto grid = U._grid;
@@ -154,8 +144,6 @@ void integrateLangevinBauer(LatticeGaugeField &U,
 
 	double cA = 3.0; // = Nc = casimir in adjoint representation
 
-	plaq = 0.0;
-	loop = 0.0;
 	for (int i = 0; i < sweeps; ++i)
 	{
 		action.refresh(U, pRNG);
@@ -163,33 +151,27 @@ void integrateLangevinBauer(LatticeGaugeField &U,
 		makeNoise(noise, pRNG);
 		action.deriv(U, force);
 		force = Ta(force);
-		evolve(Uprime, -eps * k1, force, std::sqrt(eps) * k2, noise, U);
+		evolve(Uprime, -delta * k1, force, std::sqrt(delta) * k2, noise, U);
 
 		// compute force at U' and evolve U = exp(F') U
 		action.deriv(Uprime, force);
 		force = Ta(force);
-		evolve(U, -eps - k5 * cA * eps * eps, force, std::sqrt(eps), noise, U);
+		evolve(U, -delta - k5 * cA * delta * delta, force, std::sqrt(delta),
+		       noise, U);
 
 		ProjectOnGroup(U);
-		plaq += QCD::ColourWilsonLoops::avgPlaquette(U);
-		loop += real(QCD::ColourWilsonLoops::avgPolyakovLoop(U));
+		trackObservables(U);
 	}
-	plaq /= sweeps;
-	loop /= sweeps;
 }
 
-void integrateHMC(LatticeGaugeField &U,
-                  CompositeAction<LatticeGaugeField> &action, GridSerialRNG &,
-                  GridParallelRNG &pRNG, double eps, int sweeps, double &plaq,
-                  double &loop)
+void HMC::run(LatticeGaugeField &U, GridSerialRNG &, GridParallelRNG &pRNG,
+              int sweeps)
 {
 	conformable(U._grid, pRNG._grid);
 	auto grid = U._grid;
 	LatticeGaugeField force(grid);
 	LatticeGaugeField mom(grid);
 
-	plaq = 0.0;
-	loop = 0.0;
 	for (int iter = 0; iter < sweeps; ++iter)
 	{
 		// new pseudo-fermions and momenta
@@ -198,24 +180,19 @@ void integrateHMC(LatticeGaugeField &U,
 		mom = std::sqrt(0.5) * Ta(mom); // TODO: right scale here?
 
 		// leap-frog integration
-		QCD::evolve(U, 0.5 * eps, mom, U);
+		evolve(U, 0.5 * delta, mom, U);
 		action.deriv(U, force);
-		force *= -eps;
+		force *= -delta;
 		mom += force;
-		QCD::evolve(U, 0.5 * eps, mom, U);
+		evolve(U, 0.5 * delta, mom, U);
 
 		ProjectOnGroup(U);
-		plaq += QCD::ColourWilsonLoops::avgPlaquette(U);
-		loop += real(QCD::ColourWilsonLoops::avgPolyakovLoop(U));
+		trackObservables(U);
 	}
-	plaq /= sweeps;
-	loop /= sweeps;
 }
 
-void quenchedHeatbath(LatticeGaugeField &U,
-                      CompositeAction<LatticeGaugeField> &action,
-                      GridSerialRNG &sRNG, GridParallelRNG &pRNG, double,
-                      int sweeps, double &plaq, double &loop)
+void Heatbath::run(LatticeGaugeField &U, GridSerialRNG &sRNG,
+                   GridParallelRNG &pRNG, int sweeps)
 {
 	conformable(U._grid, pRNG._grid);
 	auto grid = U._grid;
@@ -223,41 +200,54 @@ void quenchedHeatbath(LatticeGaugeField &U,
 	LatticeColourMatrix staple(grid);
 
 	// init checkerboard
-	QCD::LatticeInteger mask(grid);
+	LatticeInteger mask(grid);
 	parallel_for(int ss = 0; ss < grid->oSites(); ++ss)
 	{
 		std::vector<int> co;
 		grid->oCoorFromOindex(co, ss);
 		int s = 0;
-		for (int mu = 0; mu < QCD::Nd; ++mu)
+		for (int mu = 0; mu < Nd; ++mu)
 			s += co[mu];
 		mask._odata[ss] = s % 2;
 	}
 
-	plaq = 0.0;
-	loop = 0.0;
 	for (int k = 0; k < sweeps; ++k)
 	{
 		for (int cb = 0; cb < 2; ++cb, mask = Integer(1) - mask)
-			for (int mu = 0; mu < QCD::Nd; ++mu)
+			for (int mu = 0; mu < Nd; ++mu)
 			{
 				ColourWilsonLoops::Staple(staple, U, mu);
 				link = peekLorentz(U, mu);
 
 				for (int sg = 0; sg < SU3::su2subgroups(); sg++)
-					SU3::SubGroupHeatBath(sRNG, pRNG, action.beta, link, staple,
-					                      sg, 20, mask);
+					SU3::SubGroupHeatBath(sRNG, pRNG, beta, link, staple, sg,
+					                      20, mask);
 
 				pokeLorentz(U, link, mu);
 			}
 
 		ProjectOnGroup(U);
-		plaq += QCD::ColourWilsonLoops::avgPlaquette(U);
-		loop += real(QCD::ColourWilsonLoops::avgPolyakovLoop(U));
+		trackObservables(U);
 	}
-	plaq /= sweeps;
-	loop /= sweeps;
 }
 
-} // namespace QCD
-} // namespace Grid
+std::unique_ptr<QCDIntegrator> makeQCDIntegrator(QCDIntegrator::Action &action,
+                                                 const json &j)
+{
+	auto method = j.at("method").get<std::string>();
+	if (method == "LangevinEuler")
+		return std::make_unique<LangevinEuler>(action,
+		                                       j.at("epsilon").get<double>());
+	if (method == "LangevinBF")
+		return std::make_unique<LangevinBF>(action,
+		                                    j.at("epsilon").get<double>());
+	if (method == "LangevinBauer")
+		return std::make_unique<LangevinBauer>(action,
+		                                       j.at("epsilon").get<double>());
+	if (method == "HMC")
+		return std::make_unique<HMC>(action, j.at("epsilon").get<double>(),
+		                             j.at("metropolis").get<bool>());
+	if (method == "Heatbath")
+		return std::make_unique<Heatbath>(action);
+	throw std::runtime_error("unknown integrator");
+}

@@ -15,8 +15,6 @@ class MSweepBetaParams
 	int beta_steps = 21;
 
 	// evolution parameters
-	std::string method; // LangevinEuler/BF/Bauer, HMC
-	double eps = 0.05;
 	int sweeps = 10; // sweeps per beta-step
 	int seed = -1;
 
@@ -35,15 +33,13 @@ class MSweepBeta : public Module
 
 	MSweepBetaParams params;
 	json actionParams;
+	json integratorParams;
 
 	MSweepBeta(const json &j)
 	{
 		j.at("grid").get_to(params.grid);
-		if (j.count("epsilon"))
-			j.at("epsilon").get_to(params.eps);
 		j.at("beta_max").get_to(params.beta_max);
 		j.at("beta_steps").get_to(params.beta_steps);
-		j.at("method").get_to(params.method);
 		j.at("sweeps").get_to(params.sweeps);
 		if (j.count("seed"))
 			j.at("seed").get_to(params.seed);
@@ -53,6 +49,7 @@ class MSweepBeta : public Module
 			j.at("plot").get_to(params.plot);
 
 		actionParams = j.at("action");
+		integratorParams = j.at("integrator");
 	}
 
 	virtual void run(Environment &env);

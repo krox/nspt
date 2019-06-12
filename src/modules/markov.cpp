@@ -1,4 +1,4 @@
-#include "modules/langevin.h"
+#include "modules/markov.h"
 
 #include "nspt/action.h"
 #include "nspt/grid_utils.h"
@@ -14,7 +14,7 @@ using GaugeField = QCD::LatticeLorentzColourMatrix;
 using GaugeMat = QCD::LatticeColourMatrix;
 using FermionField = QCD::LatticeSpinColourVector;
 
-void MLangevin::run(Environment &env)
+void MMarkov::run(Environment &env)
 {
 	// gauge field
 	GaugeField &U = env.store.get<GaugeField>(params.field);
@@ -38,38 +38,31 @@ void MLangevin::run(Environment &env)
 	}
 
 	// track some observables during simulation
-	std::vector<double> ts, plaq;
+	std::vector<double> plaq, loop;
 
+	// create the action
 	CompositeAction<GaugeField> action(actionParams, grid, gridRB);
 	std::cout << action.LogParameters() << std::endl;
 
-	// rescale step size
-	double delta = params.eps / action.beta;
+	// create the integrator
+	std::unique_ptr<QCDIntegrator> integrator =
+	    makeQCDIntegrator(action, integratorParams);
 
 	for (int i = 0; i < params.count; ++i)
 	{
 		// numerical integration of the langevin process
-		double _;
-		if (params.improvement == 0)
-			QCD::integrateLangevin(U, action, sRNG, pRNG, delta, params.sweeps,
-			                       _, _);
-		else if (params.improvement == 1)
-			QCD::integrateLangevinBF(U, action, sRNG, pRNG, delta,
-			                         params.sweeps, _, _);
-		else if (params.improvement == 2)
-			QCD::integrateLangevinBauer(U, action, sRNG, pRNG, delta,
-			                            params.sweeps, _, _);
-		else
-			assert(false);
+		integrator->run(U, sRNG, pRNG, params.sweeps);
 
 		// measurements
 		double p = QCD::ColourWilsonLoops::avgPlaquette(U);
-		ts.push_back((i + 1) * params.eps);
+		double l = real(QCD::ColourWilsonLoops::avgPolyakovLoop(U));
 		plaq.push_back(p);
+		loop.push_back(l);
 
 		// some logging
 		if (primaryTask())
-			fmt::print("k = {}/{}, plaq = {}\n", i + 1, params.count, p);
+			fmt::print("k = {}/{}, plaq = {}, loop = {}\n", i + 1, params.count,
+			           p, l);
 
 		// write config to file
 		if (params.path != "")
@@ -94,28 +87,32 @@ void MLangevin::run(Environment &env)
 	if (primaryTask() && params.filename != "")
 	{
 		fmt::print("writing results to '{}'\n", params.filename);
-
 		auto file = DataFile::create(params.filename);
+
 		file.setAttribute("geom", grid->FullDimensions());
 		file.setAttribute("count", params.count);
-
 		file.setAttribute("sweeps", params.sweeps);
-		file.setAttribute("eps", params.eps);
-		file.setAttribute("improvement", params.improvement);
 
+		// integrator params
+		file.setAttribute("method",
+		                  integratorParams.value("method", "unknown"));
+		file.setAttribute("epsilon",
+		                  integratorParams.value("epsilon", 0.0 / 0.0));
+
+		// action params
 		file.setAttribute("gauge_action", action.gauge_action);
 		file.setAttribute("beta", action.beta);
-
 		file.setAttribute("fermion_action", action.fermion_action);
 		file.setAttribute("csw", action.csw);
 		file.setAttribute("kappa_light", action.kappa_light);
 
-		file.createData("ts", ts);
+		// measurments
 		file.createData("plaq", plaq);
+		file.createData("loop", loop);
 	}
 
 	if (primaryTask() && params.plot)
 	{
-		Gnuplot().plotData(plaq, "plaq");
+		Gnuplot().plotData(plaq, "plaq").plotData(loop, "loop");
 	}
 }

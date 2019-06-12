@@ -1,10 +1,10 @@
-#ifndef MODULES_LANGEVIN_H
-#define MODULES_LANGEVIN_H
+#ifndef MODULES_MARKOV_H
+#define MODULES_MARKOV_H
 
 #include "modules/module.h"
 #include <random>
 
-class MLangevinParams
+class MMarkovParams
 {
   public:
 	// IO
@@ -13,9 +13,7 @@ class MLangevinParams
 	std::string path = "";     // path to store configs in
 	std::string prefix = "";   // prefix for config files
 
-	// Langevin integration
-	double eps = 0.05;
-	int improvement = 2;
+	// markov chain params
 	int count = 1000;
 	int seed = -1;
 	int sweeps = 1;
@@ -25,19 +23,20 @@ class MLangevinParams
 	bool plot = false;
 };
 
-class MLangevin : public Module
+class MMarkov : public Module
 {
   public:
 	const std::string &name()
 	{
-		static const std::string name_ = "Langevin";
+		static const std::string name_ = "Markov";
 		return name_;
 	}
 
-	MLangevinParams params;
+	MMarkovParams params;
 	json actionParams;
+	json integratorParams;
 
-	MLangevin(const json &j)
+	MMarkov(const json &j)
 	{
 		// io params
 		j.at("field").get_to(params.field);
@@ -48,9 +47,7 @@ class MLangevin : public Module
 		if (j.count("prefix"))
 			j.at("prefix").get_to(params.prefix);
 
-		// langevin params
-		j.at("epsilon").get_to(params.eps);
-		j.at("improvement").get_to(params.improvement);
+		// markov chain params
 		j.at("count").get_to(params.count);
 		if (j.count("seed"))
 			j.at("seed").get_to(params.seed);
@@ -60,8 +57,9 @@ class MLangevin : public Module
 		if (j.count("rng"))
 			j.at("rng").get_to(params.rng);
 
-		// gauge action
+		// action and integrator
 		actionParams = j.at("action");
+		integratorParams = j.at("integrator");
 
 		// misc
 		if (j.count("plot"))

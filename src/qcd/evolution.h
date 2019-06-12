@@ -4,6 +4,8 @@
 #include "Grid/Grid.h"
 #include "nspt/action.h"
 
+using namespace Grid;
+
 namespace Grid {
 namespace QCD {
 
@@ -23,38 +25,121 @@ void evolve(LatticeGaugeField &V, double a, const LatticeGaugeField &X,
 /** this creates normal distribution with variance <eta^2>=2 */
 void makeNoise(LatticeGaugeField &out, GridParallelRNG &pRNG);
 
+} // namespace QCD
+} // namespace Grid
+
+class QCDIntegrator
+{
+  public:
+	using Action = CompositeAction<QCD::LatticeGaugeField>;
+
+	/** track basic observables during simulation */
+	std::vector<double> plaq_history;
+	std::vector<double> loop_history;
+	int nAccept = 0;
+	int nReject = 0;
+
+	void resetStats()
+	{
+		plaq_history.resize(0);
+		loop_history.resize(0);
+		nAccept = 0;
+		nReject = 0;
+	}
+
+	virtual ~QCDIntegrator() = default;
+	virtual void run(QCD::LatticeGaugeField &U, GridSerialRNG &sRNG,
+	                 GridParallelRNG &pRNG, int sweeps) = 0;
+
+  protected:
+	// to be used after every sweep
+	void trackObservables(QCD::LatticeGaugeField &U)
+	{
+		plaq_history.push_back(QCD::ColourWilsonLoops::avgPlaquette(U));
+		loop_history.push_back(
+		    real(QCD::ColourWilsonLoops::avgPolyakovLoop(U)));
+	}
+};
+
 /** NOTE: this does basic non-rescaled Langevin evolution.
  * For nice correlations, use eps=eps/beta so that the effective drift is
  * invariant of beta */
-void integrateLangevin(LatticeGaugeField &U,
-                       CompositeAction<LatticeGaugeField> &action,
-                       GridSerialRNG &sRNG, GridParallelRNG &pRNG, double eps,
-                       int sweeps, double &plaq, double &loop);
+class LangevinEuler : public QCDIntegrator
+{
+  public:
+	Action &action;
+	double delta;
 
-void integrateLangevinBF(LatticeGaugeField &U,
-                         CompositeAction<LatticeGaugeField> &action,
-                         GridSerialRNG &sRNG, GridParallelRNG &pRNG, double eps,
-                         int sweeps, double &plaq, double &loop);
+	LangevinEuler(Action &action, double eps)
+	    : action(action), delta(eps / action.beta)
+	{}
 
-void integrateLangevinBauer(LatticeGaugeField &U,
-                            CompositeAction<LatticeGaugeField> &action,
-                            GridSerialRNG &sRNG, GridParallelRNG &pRNG,
-                            double eps, int sweeps, double &plaq, double &loop);
+	void run(QCD::LatticeGaugeField &U, GridSerialRNG &sRNG,
+	         GridParallelRNG &pRNG, int sweeps) override;
+};
+
+class LangevinBF : public QCDIntegrator
+{
+  public:
+	Action &action;
+	double delta;
+
+	LangevinBF(Action &action, double eps)
+	    : action(action), delta(eps / action.beta)
+	{}
+
+	void run(QCD::LatticeGaugeField &U, GridSerialRNG &sRNG,
+	         GridParallelRNG &pRNG, int sweeps) override;
+};
+
+class LangevinBauer : public QCDIntegrator
+{
+  public:
+	Action &action;
+	double delta;
+
+	LangevinBauer(Action &action, double eps)
+	    : action(action), delta(eps / action.beta)
+	{}
+	void run(QCD::LatticeGaugeField &U, GridSerialRNG &sRNG,
+	         GridParallelRNG &pRNG, int sweeps) override;
+};
 
 /** Hybrid-Monte-Carlo */
-void integrateHMC(LatticeGaugeField &U,
-                  CompositeAction<LatticeGaugeField> &action,
-                  GridSerialRNG &sRNG, GridParallelRNG &pRNG, double eps,
-                  int sweeps, double &plaq, double &loop);
+class HMC : public QCDIntegrator
+{
+  public:
+	Action &action;
+	double delta;
+	bool metropolis;
+
+	HMC(Action &action, double eps, bool metropolis)
+	    : action(action), delta(eps / std::sqrt(action.beta)),
+	      metropolis(metropolis)
+	{}
+
+	void run(QCD::LatticeGaugeField &U, GridSerialRNG &sRNG,
+	         GridParallelRNG &pRNG, int sweeps) override;
+};
 
 /** quenched SU(3) heatbath. Not actually an "integrator", but useful to have
  * the same interface */
-void quenchedHeatbath(LatticeGaugeField &U,
-                      CompositeAction<LatticeGaugeField> &action,
-                      GridSerialRNG &sRNG, GridParallelRNG &pRNG, double,
-                      int sweeps, double &plaq, double &loop);
+class Heatbath : public QCDIntegrator
+{
+  public:
+	double beta;
 
-} // namespace QCD
-} // namespace Grid
+	Heatbath(Action &action) : beta(action.beta)
+	{
+		assert(action.gauge_action == "wilson");
+		assert(action.fermion_action == "");
+	}
+
+	void run(QCD::LatticeGaugeField &U, GridSerialRNG &sRNG,
+	         GridParallelRNG &pRNG, int sweeps) override;
+};
+
+std::unique_ptr<QCDIntegrator> makeQCDIntegrator(QCDIntegrator::Action &action,
+                                                 const json &j);
 
 #endif
