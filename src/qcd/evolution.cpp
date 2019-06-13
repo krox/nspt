@@ -164,6 +164,45 @@ void LangevinBauer::run(LatticeGaugeField &U, GridSerialRNG &,
 	}
 }
 
+HMC::HMC(Action &action, double eps, bool metropolis, const std::string &scheme)
+    : action(action), delta(eps / std::sqrt(action.beta)),
+      metropolis(metropolis)
+{
+	// naming conventions as in https://arxiv.org/pdf/hep-lat/0505020.pdf
+	if (scheme == "2LF")
+	{
+		coeff.push_back(0.5);
+		coeff.push_back(1.0);
+		coeff.push_back(0.5);
+	}
+	else if (scheme == "2MN")
+	{
+		double lambda = 0.19318332750378361;
+		coeff.push_back(lambda);
+		coeff.push_back(0.5);
+		coeff.push_back(1.0 - 2.0 * lambda);
+		coeff.push_back(0.5);
+		coeff.push_back(lambda);
+	}
+	else if (scheme == "4MN4FP" || scheme == "4MN")
+	{
+		double rho = 0.1786178958448091;
+		double theta = -0.06626458266981843;
+		double lambda = 0.7123418310626056;
+		coeff.push_back(rho);
+		coeff.push_back(lambda);
+		coeff.push_back(theta);
+		coeff.push_back(0.5 - lambda);
+		coeff.push_back(1 - 2 * (rho + theta));
+		coeff.push_back(0.5 - lambda);
+		coeff.push_back(theta);
+		coeff.push_back(lambda);
+		coeff.push_back(rho);
+	}
+	else
+		throw std::runtime_error("unknown HMC integration scheme");
+}
+
 void HMC::run(LatticeGaugeField &U, GridSerialRNG &sRNG, GridParallelRNG &pRNG,
               int sweeps)
 {
@@ -190,11 +229,20 @@ void HMC::run(LatticeGaugeField &U, GridSerialRNG &sRNG, GridParallelRNG &pRNG,
 		}
 
 		// leap-frog integration
-		evolve(Uprime, 0.5 * delta, mom, U);
-		action.deriv(Uprime, force);
-		force *= -delta;
-		mom += force;
-		evolve(Uprime, 0.5 * delta, mom, Uprime);
+		Uprime = U;
+		for (int i = 0; i < (int)coeff.size(); ++i)
+		{
+			if (i % 2 == 0) // update U
+			{
+				evolve(Uprime, delta * coeff[i], mom, Uprime);
+			}
+			else // update momenta
+			{
+				action.deriv(Uprime, force);
+				force *= -delta * coeff[i];
+				mom += force;
+			}
+		}
 
 		if (metropolis)
 		{
@@ -206,18 +254,14 @@ void HMC::run(LatticeGaugeField &U, GridSerialRNG &sRNG, GridParallelRNG &pRNG,
 		{
 			double r;
 			random(sRNG, r);
-			// fmt::print("{}, deltaS = {}, deltaM = {}\n", r, S_new - S_old,
-			// M_new - M_old);
 			if (r <= std::exp((S_old - S_new) + (M_old - M_new)))
 			{
 				nAccept += 1;
 				U = Uprime;
-				// fmt::print("accept\n");
 			}
 			else
 			{
 				nReject += 1;
-				//	fmt::print("reject\n");
 			}
 		}
 		else
@@ -283,7 +327,8 @@ std::unique_ptr<QCDIntegrator> makeQCDIntegrator(QCDIntegrator::Action &action,
 		                                       j.at("epsilon").get<double>());
 	if (method == "HMC")
 		return std::make_unique<HMC>(action, j.at("epsilon").get<double>(),
-		                             j.at("metropolis").get<bool>());
+		                             j.at("metropolis").get<bool>(),
+		                             j.value<std::string>("scheme", "2LF"));
 	if (method == "Heatbath")
 		return std::make_unique<Heatbath>(action);
 	throw std::runtime_error("unknown integrator");

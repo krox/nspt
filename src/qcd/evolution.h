@@ -110,15 +110,15 @@ class LangevinBauer : public QCDIntegrator
 /** Hybrid-Monte-Carlo */
 class HMC : public QCDIntegrator
 {
+	std::vector<double> coeff;
+
   public:
 	Action &action;
 	double delta;
 	bool metropolis;
 
-	HMC(Action &action, double eps, bool metropolis)
-	    : action(action), delta(eps / std::sqrt(action.beta)),
-	      metropolis(metropolis)
-	{}
+	HMC(Action &action, double eps, bool metropolis,
+	    const std::string &scheme = "2LF");
 
 	void run(QCD::LatticeGaugeField &U, GridSerialRNG &sRNG,
 	         GridParallelRNG &pRNG, int sweeps) override;
