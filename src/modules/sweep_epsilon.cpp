@@ -35,8 +35,7 @@ void MSweepEpsilon::run(Environment &env)
 	// track some observables during simulation
 	std::vector<double> es, plaq1, plaq2, loop1, loop2;
 
-	// NOTE: starting at large epsilon is better for thermalization
-	for (int k = params.epsilon_steps; k >= 0; --k)
+	for (int k = 0; k < params.epsilon_steps; ++k)
 	{
 		// create action (NOTE: dont do beta=0. bad for rescaling)
 		double eps =
@@ -68,7 +67,8 @@ void MSweepEpsilon::run(Environment &env)
 		plaq2.push_back(p2);
 		loop2.push_back(l2);
 		if (primaryTask())
-			fmt::print("eps = {}, plaq = {}, loop = {}\n", eps, p2, l2);
+			fmt::print("eps = {}, plaq = {}, loop = {}, acc = {:.3f}\n", eps,
+			           p2, l2, integrator->acceptance());
 	}
 
 	if (primaryTask() && params.plot)

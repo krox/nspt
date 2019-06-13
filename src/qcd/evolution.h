@@ -47,6 +47,8 @@ class QCDIntegrator
 		nReject = 0;
 	}
 
+	double acceptance() const { return double(nAccept) / (nAccept + nReject); }
+
 	virtual ~QCDIntegrator() = default;
 	virtual void run(QCD::LatticeGaugeField &U, GridSerialRNG &sRNG,
 	                 GridParallelRNG &pRNG, int sweeps) = 0;

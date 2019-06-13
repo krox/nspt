@@ -107,17 +107,17 @@ class CompositeAction : public QCD::Action<GaugeField>
 	{
 		assert(gaugeAction);
 		gaugeAction->deriv(U, dSdU);
-		double n = norm2(dSdU) / U._grid->gSites();
-		if (primaryTask())
-			fmt::print("{} force = {}\n", gaugeAction->action_name(), n);
+		// double n = norm2(dSdU) / U._grid->gSites();
+		// if (primaryTask())
+		//	fmt::print("{} force = {}\n", gaugeAction->action_name(), n);
 
 		if (fermAction)
 		{
 			GaugeField tmp(dSdU._grid);
 			fermAction->deriv(U, tmp);
-			n = norm2(tmp) / U._grid->gSites();
-			if (primaryTask())
-				fmt::print("{} force = {}\n", fermAction->action_name(), n);
+			// n = norm2(tmp) / U._grid->gSites();
+			// if (primaryTask())
+			//	fmt::print("{} force = {}\n", fermAction->action_name(), n);
 			dSdU += tmp;
 		}
 	}

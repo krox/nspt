@@ -60,9 +60,9 @@ void makeNoise(LatticeGaugeField &out, GridParallelRNG &pRNG)
 {
 	gaussian(pRNG, out);
 	out = Ta(out);
-	auto n = norm2(out) / out._grid->gSites();
-	if (primaryTask())
-		fmt::print("noise force = {}\n", n);
+	// auto n = norm2(out) / out._grid->gSites();
+	// if (primaryTask())
+	//	fmt::print("noise force = {}\n", n);
 }
 
 } // namespace QCD
@@ -164,13 +164,16 @@ void LangevinBauer::run(LatticeGaugeField &U, GridSerialRNG &,
 	}
 }
 
-void HMC::run(LatticeGaugeField &U, GridSerialRNG &, GridParallelRNG &pRNG,
+void HMC::run(LatticeGaugeField &U, GridSerialRNG &sRNG, GridParallelRNG &pRNG,
               int sweeps)
 {
 	conformable(U._grid, pRNG._grid);
 	auto grid = U._grid;
 	LatticeGaugeField force(grid);
 	LatticeGaugeField mom(grid);
+	LatticeGaugeField Uprime(grid);
+	double S_old, S_new;
+	double M_old, M_new;
 
 	for (int iter = 0; iter < sweeps; ++iter)
 	{
@@ -179,12 +182,46 @@ void HMC::run(LatticeGaugeField &U, GridSerialRNG &, GridParallelRNG &pRNG,
 		gaussian(pRNG, mom);
 		mom = std::sqrt(0.5) * Ta(mom); // TODO: right scale here?
 
+		// old action
+		if (metropolis)
+		{
+			S_old = action.S(U);
+			M_old = norm2(mom);
+		}
+
 		// leap-frog integration
-		evolve(U, 0.5 * delta, mom, U);
-		action.deriv(U, force);
+		evolve(Uprime, 0.5 * delta, mom, U);
+		action.deriv(Uprime, force);
 		force *= -delta;
 		mom += force;
-		evolve(U, 0.5 * delta, mom, U);
+		evolve(Uprime, 0.5 * delta, mom, Uprime);
+
+		if (metropolis)
+		{
+			S_new = action.S(Uprime);
+			M_new = norm2(mom);
+		}
+
+		if (metropolis)
+		{
+			double r;
+			random(sRNG, r);
+			// fmt::print("{}, deltaS = {}, deltaM = {}\n", r, S_new - S_old,
+			// M_new - M_old);
+			if (r <= std::exp((S_old - S_new) + (M_old - M_new)))
+			{
+				nAccept += 1;
+				U = Uprime;
+				// fmt::print("accept\n");
+			}
+			else
+			{
+				nReject += 1;
+				//	fmt::print("reject\n");
+			}
+		}
+		else
+			U = Uprime;
 
 		ProjectOnGroup(U);
 		trackObservables(U);
