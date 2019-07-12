@@ -36,3 +36,7 @@ add_executable(app src/app.cpp ${files_cpp})
 target_include_directories(app PRIVATE ${HDF5_INCLUDE_DIRS})
 target_link_libraries(app util ${HDF5_LIBRARIES} fmt stdc++fs Grid numa z crypto lime fftw3f fftw3 mpfr gmp stdc++ m z numa)
 target_compile_definitions(app PRIVATE NSPT_ORDER=${ORDER})
+
+add_executable(toy src/toy.cpp src/util/hdf5.cpp)
+target_include_directories(toy PRIVATE ${HDF5_INCLUDE_DIRS})
+target_link_libraries(toy util ${HDF5_LIBRARIES} fmt stdc++fs stdc++)
