@@ -105,6 +105,8 @@ class DataFile : public DataObject
 	static DataFile open(const std::string &filename, bool writeable = false);
 	void close();
 
+	explicit operator bool() const { return id != 0; }
+
 	/** general object access */
 	bool exists(const std::string &name);
 	void remove(const std::string &name);
