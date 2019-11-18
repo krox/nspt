@@ -121,7 +121,7 @@ void LangevinBF::run(LatticeGaugeField &U, GridSerialRNG &,
 
 		// evolve U = exp(F') U
 		evolve(U, -0.5 * delta, force + force2, std::sqrt(delta), noise,
-		       delta * delta * cA / 6.0, force2, U);
+		       -delta * delta * cA / 6.0, force2, U);
 
 		ProjectOnGroup(U);
 		trackObservables(U);
