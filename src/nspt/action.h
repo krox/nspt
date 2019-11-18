@@ -25,6 +25,8 @@ class CompositeAction : public QCD::Action<GaugeField>
 	std::string fermion_action = "";
 	double kappa_light = 0.0;
 	double csw = 0.0;
+	double solver_tol = 1.0e-11;
+	int solver_max_iter = 5000;
 
 	CompositeAction(const json &j, GridCartesian *grid,
 	                GridRedBlackCartesian *gridRB)
@@ -38,6 +40,10 @@ class CompositeAction : public QCD::Action<GaugeField>
 			j.at("kappa_light").get_to(kappa_light);
 		if (j.count("csw"))
 			j.at("csw").get_to(csw);
+		if(j.count("solver_tol"))
+			j.at("solver_tol").get_to(solver_tol);
+		if(j.count("solver_max_iter"))
+			j.at("solver_max_iter").get_to(solver_max_iter);
 
 		// gauge action
 		if (gauge_action == "wilson")
@@ -62,10 +68,6 @@ class CompositeAction : public QCD::Action<GaugeField>
 
 			// NOTE: bare mass is typically negative
 			double mass = 0.5 * (1.0 / kappa_light - 8.0);
-
-			// solver parameters
-			double solver_tol = 1.0e-11;
-			int solver_max_iter = 5000;
 
 			if (primaryTask())
 				fmt::print("mass = {}, kappa = {}, csw = {}\n", mass,

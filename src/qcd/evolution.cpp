@@ -239,8 +239,7 @@ void HMC::run(LatticeGaugeField &U, GridSerialRNG &sRNG, GridParallelRNG &pRNG,
 			else // update momenta
 			{
 				action.deriv(Uprime, force);
-				force *= -delta * coeff[i];
-				mom += force;
+				mom += (-delta * coeff[i]) * Ta(force);
 			}
 		}
 

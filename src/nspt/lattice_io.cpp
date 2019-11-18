@@ -94,7 +94,7 @@ std::vector<int> getGridFromFile(const std::string &filename)
 		auto file = std::fstream(filename, std::ios::in | std::ios::binary);
 		file.read((char *)&header, sizeof(Header));
 		meta_str.resize(header.meta_size);
-		file.read(meta_str.data(), meta_str.size());
+		file.read((char*)meta_str.data(), meta_str.size());
 		file.close();
 	}
 
@@ -120,7 +120,7 @@ static void readField(const std::string &filename, Lattice<vobj> &U, json &meta)
 		auto file = std::fstream(filename, std::ios::in | std::ios::binary);
 		file.read((char *)&header, sizeof(Header));
 		meta_str.resize(header.meta_size);
-		file.read(meta_str.data(), meta_str.size());
+		file.read((char*)meta_str.data(), meta_str.size());
 		file.close();
 	}
 	if (header.magic != MAGIC)
