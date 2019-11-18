@@ -13,9 +13,33 @@
 
 namespace util {
 
-class DataSet
+class DataObject
 {
+  private:
+	void setAttribute(const std::string &, hid_t, const void *);
+	void setAttribute(const std::string &, hid_t, hsize_t, const void *);
+
+	void getAttribute(const std::string &name, hid_t type, void *data);
+
+  protected:
 	hid_t id = 0;
+
+	DataObject() = default;
+	DataObject(hid_t id) : id(id) {}
+
+  public:
+	/** attributes */
+	void setAttribute(const std::string &name, double v);
+	void setAttribute(const std::string &name, int v);
+	void setAttribute(const std::string &name, const std::string &v);
+	void setAttribute(const std::string &name, span<const double> v);
+	void setAttribute(const std::string &name, span<const int> v);
+
+	template <typename T> T getAttribute(const std::string &name);
+};
+
+class DataSet : public DataObject
+{
 	size_t size_ = 0;
 	std::vector<hsize_t> shape_;
 
@@ -27,7 +51,7 @@ class DataSet
 	/** non copyable but movable */
 	DataSet(const DataSet &) = delete;
 	DataSet &operator=(const DataSet &) = delete;
-	DataSet(DataSet &&f) : id(f.id), size_(f.size_), shape_(f.shape_)
+	DataSet(DataSet &&f) : DataObject(f.id), size_(f.size_), shape_(f.shape_)
 	{
 		f.id = 0;
 	};
@@ -57,22 +81,15 @@ class DataSet
 	template <typename T> std::vector<T> read();
 };
 
-class DataFile
+class DataFile : public DataObject
 {
-	hid_t id = 0; // >0 for actually opened files
-
-	explicit DataFile(hid_t id_) : id(id_) {}
-
-	void setAttribute(const std::string &, hid_t, const void *);
-	void setAttribute(const std::string &, hid_t, hsize_t, const void *);
-
-	void getAttribute(const std::string &name, hid_t type, void *data);
+	explicit DataFile(hid_t id_) : DataObject(id_) {}
 
   public:
 	/** non copyable but movable */
 	DataFile(const DataFile &) = delete;
 	DataFile &operator=(const DataFile &) = delete;
-	DataFile(DataFile &&f) : id(f.id) { f.id = 0; };
+	DataFile(DataFile &&f) : DataObject(f.id) { f.id = 0; };
 	DataFile &operator=(DataFile &&f)
 	{
 		close();
@@ -87,6 +104,8 @@ class DataFile
 	static DataFile create(const std::string &filename, bool overwrite = false);
 	static DataFile open(const std::string &filename, bool writeable = false);
 	void close();
+
+	explicit operator bool() const { return id != 0; }
 
 	/** general object access */
 	bool exists(const std::string &name);
@@ -106,15 +125,6 @@ class DataFile
 
 	/** groups */
 	void makeGroup(const std::string &name);
-
-	/** attributes */
-	void setAttribute(const std::string &name, double v);
-	void setAttribute(const std::string &name, int v);
-	void setAttribute(const std::string &name, const std::string &v);
-	void setAttribute(const std::string &name, span<const double> v);
-	void setAttribute(const std::string &name, span<const int> v);
-
-	template <typename T> T getAttribute(const std::string &name);
 };
 
 } // namespace util

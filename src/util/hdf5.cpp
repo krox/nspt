@@ -15,7 +15,7 @@ hid_t enforce(hid_t id)
 }
 } // namespace
 
-DataSet::DataSet(hid_t id_) : id(id_)
+DataSet::DataSet(hid_t id_) : DataObject(id_)
 {
 	if (id <= 0)
 		return;
@@ -160,7 +160,8 @@ void DataFile::makeGroup(const std::string &name)
 	H5Gclose(group);
 }
 
-void DataFile::setAttribute(const std::string &name, hid_t type, const void *v)
+void DataObject::setAttribute(const std::string &name, hid_t type,
+                              const void *v)
 {
 	assert(id > 0);
 	auto space = enforce(H5Screate(H5S_SCALAR));
@@ -170,8 +171,8 @@ void DataFile::setAttribute(const std::string &name, hid_t type, const void *v)
 	H5Sclose(space);
 }
 
-void DataFile::setAttribute(const std::string &name, hid_t type, hsize_t count,
-                            const void *v)
+void DataObject::setAttribute(const std::string &name, hid_t type,
+                              hsize_t count, const void *v)
 {
 	assert(id > 0);
 	auto space = enforce(H5Screate_simple(1, &count, nullptr));
@@ -181,17 +182,17 @@ void DataFile::setAttribute(const std::string &name, hid_t type, hsize_t count,
 	H5Sclose(space);
 }
 
-void DataFile::setAttribute(const std::string &name, double v)
+void DataObject::setAttribute(const std::string &name, double v)
 {
 	setAttribute(name, H5T_NATIVE_DOUBLE, &v);
 }
 
-void DataFile::setAttribute(const std::string &name, int v)
+void DataObject::setAttribute(const std::string &name, int v)
 {
 	setAttribute(name, H5T_NATIVE_INT, &v);
 }
 
-void DataFile::setAttribute(const std::string &name, const std::string &v)
+void DataObject::setAttribute(const std::string &name, const std::string &v)
 {
 	auto type = enforce(H5Tcopy(H5T_C_S1));
 	enforce(H5Tset_size(type, H5T_VARIABLE));
@@ -200,17 +201,17 @@ void DataFile::setAttribute(const std::string &name, const std::string &v)
 	H5Tclose(type);
 }
 
-void DataFile::setAttribute(const std::string &name, span<const double> v)
+void DataObject::setAttribute(const std::string &name, span<const double> v)
 {
 	setAttribute(name, H5T_NATIVE_DOUBLE, v.size(), v.data());
 }
 
-void DataFile::setAttribute(const std::string &name, span<const int> v)
+void DataObject::setAttribute(const std::string &name, span<const int> v)
 {
 	setAttribute(name, H5T_NATIVE_INT, v.size(), v.data());
 }
 
-void DataFile::getAttribute(const std::string &name, hid_t type, void *data)
+void DataObject::getAttribute(const std::string &name, hid_t type, void *data)
 {
 	// open attribute
 	auto attr = enforce(H5Aopen(id, name.c_str(), 0));
@@ -228,14 +229,14 @@ void DataFile::getAttribute(const std::string &name, hid_t type, void *data)
 	H5Aclose(attr);
 }
 
-template <> int DataFile::getAttribute<int>(const std::string &name)
+template <> int DataObject::getAttribute<int>(const std::string &name)
 {
 	int r;
 	getAttribute(name, H5T_NATIVE_INT, &r);
 	return r;
 }
 
-template <> double DataFile::getAttribute<double>(const std::string &name)
+template <> double DataObject::getAttribute<double>(const std::string &name)
 {
 	double r;
 	getAttribute(name, H5T_NATIVE_DOUBLE, &r);
@@ -243,7 +244,7 @@ template <> double DataFile::getAttribute<double>(const std::string &name)
 }
 
 template <>
-std::string DataFile::getAttribute<std::string>(const std::string &name)
+std::string DataObject::getAttribute<std::string>(const std::string &name)
 {
 	auto type = enforce(H5Tcopy(H5T_C_S1));
 	enforce(H5Tset_size(type, H5T_VARIABLE));
@@ -259,7 +260,7 @@ std::string DataFile::getAttribute<std::string>(const std::string &name)
 
 template <>
 std::vector<int>
-DataFile::getAttribute<std::vector<int>>(const std::string &name)
+DataObject::getAttribute<std::vector<int>>(const std::string &name)
 {
 	// open attribute
 	auto attr = enforce(H5Aopen(id, name.c_str(), 0));
@@ -279,7 +280,7 @@ DataFile::getAttribute<std::vector<int>>(const std::string &name)
 
 template <>
 std::vector<double>
-DataFile::getAttribute<std::vector<double>>(const std::string &name)
+DataObject::getAttribute<std::vector<double>>(const std::string &name)
 {
 	// open attribute
 	auto attr = enforce(H5Aopen(id, name.c_str(), 0));
