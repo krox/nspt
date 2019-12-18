@@ -95,7 +95,7 @@ DataFile DataFile::open(const std::string &filename, bool writeable)
 void DataFile::close()
 {
 	if (id > 0)
-		H5Fclose(id);
+		enforce(H5Fclose(id));
 	id = 0;
 }
 

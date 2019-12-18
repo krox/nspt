@@ -113,6 +113,6 @@ void MMarkov::run(Environment &env)
 
 	if (primaryTask() && params.plot)
 	{
-		Gnuplot().plotData(plaq, "plaq").plotData(loop, "loop");
+		Gnuplot().plotData(plaq, "plaq"); //.plotData(loop, "loop");
 	}
 }
