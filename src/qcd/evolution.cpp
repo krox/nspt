@@ -324,10 +324,15 @@ std::unique_ptr<QCDIntegrator> makeQCDIntegrator(QCDIntegrator::Action &action,
 	if (method == "LangevinBauer")
 		return std::make_unique<LangevinBauer>(action,
 		                                       j.at("epsilon").get<double>());
-	if (method == "HMC")
+	if (method == "HMC_2LF")
 		return std::make_unique<HMC>(action, j.at("epsilon").get<double>(),
-		                             j.at("metropolis").get<bool>(),
-		                             j.value<std::string>("scheme", "2LF"));
+		                             j.value<bool>("metropolis", false), "2LF");
+	if (method == "HMC_2MN")
+		return std::make_unique<HMC>(action, j.at("epsilon").get<double>(),
+		                             j.value<bool>("metropolis", false), "2MN");
+	if (method == "HMC_4MN")
+		return std::make_unique<HMC>(action, j.at("epsilon").get<double>(),
+		                             j.value<bool>("metropolis", false), "4MN");
 	if (method == "Heatbath")
 		return std::make_unique<Heatbath>(action);
 	throw std::runtime_error("unknown integrator");
