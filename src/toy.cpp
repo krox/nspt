@@ -89,8 +89,15 @@ class PeriodicWell : public Action
 	}
 };
 
+struct IntegratorParams
+{
+	// f1 = k1 S' eps + k2 eta sqrt(eps) + k8 eta sqrt(eps)
+	// f2 = k3 S' eps + k4 S'(x') eps + k6 eta sqrt(eps)
+	double k1 = 1.0, k2 = 1.0, k3 = 0.5, k4 = 0.5, k6 = 1.0, k8 = 0.0;
+};
+
 std::vector<double> runMarkov(const Action &action, int count, double eps,
-                              int seed)
+                              int seed, IntegratorParams params)
 {
 	if (seed == -1)
 		seed = std::random_device()();
@@ -100,13 +107,22 @@ std::vector<double> runMarkov(const Action &action, int count, double eps,
 	double x = 0.0; // cold start
 	std::vector<double> data;
 	data.reserve(count);
+	double seps = std::sqrt(eps);
 	for (int i = -count / 2; i < count; ++i)
 	{
-		double eta = dist(rng);
+		for (int iter = 0; iter < 5; ++iter)
+		{
+			double eta = dist(rng);
+			double xi = dist(rng);
+			double f1 = params.k1 * eps * action.Sd(x) +
+			            params.k2 * seps * eta + params.k8 * seps * xi;
+			double x1 = x - f1;
+			double f = params.k3 * action.Sd(x) * eps +
+			           params.k4 * action.Sd(x1) * eps + params.k6 * eta * seps;
+			x -= f;
+			x = action.normalize(x);
+		}
 
-		double f = eps * action.Sd(x) + std::sqrt(eps) * eta;
-		x -= f;
-		x = action.normalize(x);
 		if (i >= 0)
 			data.push_back(x);
 	}
@@ -118,7 +134,7 @@ int main(int argc, char **argv)
 	CLI::App app{"1D toy model to test ideas about Markov processes"};
 
 	std::string action_name = "";
-	int count = 1000000;
+	int count = 200000;
 	std::string filename = "";
 	bool force = false;
 	bool rescaling = true;
@@ -147,11 +163,28 @@ int main(int argc, char **argv)
 	app.add_option("--beta_max", beta_max);
 	app.add_option("--beta_count", beta_count);
 
+	IntegratorParams params = {};
+	app.add_option("--k1", params.k1);
+	app.add_option("--k2", params.k2);
+	app.add_option("--k3", params.k3);
+	app.add_option("--k4", params.k4);
+	app.add_option("--k6", params.k6);
+	app.add_option("--k8", params.k8);
+
 	CLI11_PARSE(app, argc, argv);
 
 	DataFile file;
 	if (filename != "")
+	{
 		file = DataFile::create(filename, force);
+		file.setAttribute("action", action_name);
+		file.setAttribute("k1", params.k1);
+		file.setAttribute("k2", params.k2);
+		file.setAttribute("k3", params.k3);
+		file.setAttribute("k4", params.k4);
+		file.setAttribute("k6", params.k6);
+		file.setAttribute("k8", params.k8);
+	}
 	int i = 1;
 
 	auto plot = Gnuplot();
@@ -185,8 +218,9 @@ int main(int argc, char **argv)
 			else
 				assert(false);
 
-			fmt::print("eps = {}, beta = {}\n", eps, beta);
-			auto data = runMarkov(*action, count, delta, seed);
+			auto data = runMarkov(*action, count, delta, seed, params);
+			fmt::print("eps = {}, beta = {}, ac = {}\n", eps, beta,
+			           util::correlationTime(data));
 
 			if (file)
 			{
