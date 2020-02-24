@@ -89,15 +89,16 @@ class PeriodicWell : public Action
 	}
 };
 
+// parameters of a general 3-step scheme
 struct IntegratorParams
 {
-	// f1 = k1 S' eps + k2 eta sqrt(eps) + k8 eta sqrt(eps)
-	// f2 = k3 S' eps + k4 S'(x') eps + k6 eta sqrt(eps)
-	double k1 = 1.0, k2 = 1.0, k3 = 0.5, k4 = 0.5, k6 = 1.0, k8 = 0.0;
+	int steps = -1;
+	double k1 = 0, k2 = 0, k3 = 0, k4 = 0, k5 = 0, k6 = 0;
+	double c1 = 0, c2 = 0, c3 = 0, c4 = 0, c5 = 0, c6 = 0;
 };
 
 std::vector<double> runMarkov(const Action &action, int count, double eps,
-                              int seed, IntegratorParams params)
+                              int seed, const IntegratorParams &params)
 {
 	if (seed == -1)
 		seed = std::random_device()();
@@ -112,14 +113,28 @@ std::vector<double> runMarkov(const Action &action, int count, double eps,
 	{
 		for (int iter = 0; iter < 5; ++iter)
 		{
-			double eta = dist(rng);
-			double xi = dist(rng);
-			double f1 = params.k1 * eps * action.Sd(x) +
-			            params.k2 * seps * eta + params.k8 * seps * xi;
-			double x1 = x - f1;
-			double f = params.k3 * action.Sd(x) * eps +
-			           params.k4 * action.Sd(x1) * eps + params.k6 * eta * seps;
-			x -= f;
+			double eta1 = dist(rng);
+			double eta2 = dist(rng);
+			double eta3 = dist(rng);
+
+			double f1 =
+			    params.k1 * eps * action.Sd(x) + params.c1 * seps * eta1;
+			double f2 = params.k2 * eps * action.Sd(x) +
+			            params.k3 * eps * action.Sd(x - f1) +
+			            params.c2 * seps * eta1 + params.c3 * seps * eta2;
+			double f3 = params.k4 * eps * action.Sd(x) +
+			            params.k5 * eps * action.Sd(x - f1) +
+			            params.k6 * eps * action.Sd(x - f2) +
+			            params.c4 * seps * eta1 + params.c5 * seps * eta2 +
+			            params.c6 * seps * eta3;
+			if (params.steps == 1)
+				x -= f1;
+			else if (params.steps == 2)
+				x -= f2;
+			else if (params.steps == 3)
+				x -= f3;
+			else
+				assert(false);
 			x = action.normalize(x);
 		}
 
@@ -163,27 +178,86 @@ int main(int argc, char **argv)
 	app.add_option("--beta_max", beta_max);
 	app.add_option("--beta_count", beta_count);
 
-	IntegratorParams params = {};
-	app.add_option("--k1", params.k1);
-	app.add_option("--k2", params.k2);
-	app.add_option("--k3", params.k3);
-	app.add_option("--k4", params.k4);
-	app.add_option("--k6", params.k6);
-	app.add_option("--k8", params.k8);
+	std::string scheme;
+	app.add_option("--scheme", scheme);
 
 	CLI11_PARSE(app, argc, argv);
+
+	IntegratorParams params;
+	if (scheme == "euler")
+	{
+		params.steps = 1;
+		params.k1 = 1;
+		params.c1 = 1;
+	}
+	else if (scheme == "bf")
+	{
+		params.steps = 2;
+		params.k1 = 1;
+		params.c1 = 1;
+		params.k2 = 0.5;
+		params.k3 = 0.5;
+		params.c2 = 1;
+	}
+	else if (scheme == "torrero")
+	{
+		params.steps = 2;
+		params.k1 = 0.08578643762690485;
+		params.c1 = 0.2928932188134524;
+		params.k2 = 0;
+		params.k3 = 1;
+		params.c2 = 1;
+	}
+	else if (scheme == "burger")
+	{
+		// minimal k1 without any additional noise
+		params.steps = 3;
+
+		params.k1 = 0.0413944133642607;
+		params.k2 = 0.0564549335355903;
+		params.k3 = 0.122177861418491;
+		params.k4 = 0.25;
+		params.k5 = 0;
+		params.k6 = 0.75;
+
+		params.c1 = 0.203456170622227;
+		params.c2 = 0.422649730810374;
+		params.c3 = 0;
+		params.c4 = 1;
+		params.c5 = 0;
+		params.c6 = 0;
+	}
+	else if (scheme == "burger_b")
+	{
+		// minimal k1 with only c5 as extra noise
+		params.steps = 3;
+
+		params.k1 = 0.0226731615535121;
+		params.k2 = 0;
+		params.k3 = 0.264297739604484;
+		params.k4 = 0.25;
+		params.k5 = 0;
+		params.k6 = 0.75;
+
+		params.c1 = 0.150576098878647;
+		params.c2 = 0.514098958960708;
+		params.c3 = 0;
+		params.c4 = 0.905433078636425;
+		params.c5 = 0.424489034146897;
+		params.c6 = 0;
+	}
+	else
+	{
+		fmt::print("unknown scheme: '{}'", scheme);
+		return -1;
+	}
 
 	DataFile file;
 	if (filename != "")
 	{
 		file = DataFile::create(filename, force);
 		file.setAttribute("action", action_name);
-		file.setAttribute("k1", params.k1);
-		file.setAttribute("k2", params.k2);
-		file.setAttribute("k3", params.k3);
-		file.setAttribute("k4", params.k4);
-		file.setAttribute("k6", params.k6);
-		file.setAttribute("k8", params.k8);
+		file.setAttribute("scheme", scheme);
 	}
 	int i = 1;
 
@@ -218,6 +292,7 @@ int main(int argc, char **argv)
 			else
 				assert(false);
 
+			// auto data = runMarkov(*action, count, delta, seed, params);
 			auto data = runMarkov(*action, count, delta, seed, params);
 			fmt::print("eps = {}, beta = {}, ac = {}\n", eps, beta,
 			           util::correlationTime(data));
@@ -258,4 +333,7 @@ int main(int argc, char **argv)
 		if (eps_count > 1 || beta_count > 1)
 			plot.plotData(xs, ys, fmt::format("beta = {}", beta));
 	}
+
+	if (file)
+		file.close();
 }
