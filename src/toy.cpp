@@ -97,8 +97,15 @@ struct IntegratorParams
 	double c1 = 0, c2 = 0, c3 = 0, c4 = 0, c5 = 0, c6 = 0;
 };
 
-std::vector<double> runMarkov(const Action &action, int count, double eps,
-                              int seed, const IntegratorParams &params)
+struct MarkovResults
+{
+	std::vector<double> configs;
+	std::vector<double> moment2;
+	std::vector<double> moment4;
+};
+
+MarkovResults runMarkov(const Action &action, int64_t count, size_t spacing,
+                        double eps, int seed, const IntegratorParams &params)
 {
 	if (seed == -1)
 		seed = std::random_device()();
@@ -106,12 +113,19 @@ std::vector<double> runMarkov(const Action &action, int count, double eps,
 	std::normal_distribution<double> dist(0, std::sqrt(2.0));
 
 	double x = 0.0; // cold start
-	std::vector<double> data;
-	data.reserve(count);
+	MarkovResults result;
+	if ((int64_t)count * 8 * 3 > 128 * 1024 * 1024)
+		throw std::runtime_error(
+		    "requested chain larger than 128MiB. Probably a mistake");
+	result.configs.reserve(count);
+	result.moment2.reserve(count);
+	result.moment4.reserve(count);
 	double seps = std::sqrt(eps);
-	for (int i = -count / 2; i < count; ++i)
+	for (int64_t i = -count / 4; i < count; ++i)
 	{
-		for (int iter = 0; iter < 5; ++iter)
+		double moment2 = 0;
+		double moment4 = 0;
+		for (size_t iter = 0; iter < spacing; ++iter)
 		{
 			double eta1 = dist(rng);
 			double eta2 = dist(rng);
@@ -136,12 +150,19 @@ std::vector<double> runMarkov(const Action &action, int count, double eps,
 			else
 				assert(false);
 			x = action.normalize(x);
+
+			moment2 += x * x;
+			moment4 += (x * x) * (x * x);
 		}
 
 		if (i >= 0)
-			data.push_back(x);
+		{
+			result.configs.push_back(x);
+			result.moment2.push_back(moment2 / spacing);
+			result.moment4.push_back(moment4 / spacing);
+		}
 	}
-	return data;
+	return result;
 }
 
 int main(int argc, char **argv)
@@ -150,6 +171,7 @@ int main(int argc, char **argv)
 
 	std::string action_name = "";
 	int count = 200000;
+	int spacing = 5;
 	std::string filename = "";
 	bool force = false;
 	bool rescaling = true;
@@ -165,6 +187,7 @@ int main(int argc, char **argv)
 
 	app.add_option("--action", action_name);
 	app.add_option("--count", count);
+	app.add_option("--spacing", spacing);
 	app.add_option("--filename", filename);
 	app.add_flag("--force", force);
 	app.add_option("--rescaling", rescaling);
@@ -258,6 +281,9 @@ int main(int argc, char **argv)
 		file = DataFile::create(filename, force);
 		file.setAttribute("action", action_name);
 		file.setAttribute("scheme", scheme);
+		file.makeGroup("configs");
+		file.makeGroup("moment2");
+		file.makeGroup("moment4");
 	}
 	int i = 1;
 
@@ -293,28 +319,46 @@ int main(int argc, char **argv)
 				assert(false);
 
 			// auto data = runMarkov(*action, count, delta, seed, params);
-			auto data = runMarkov(*action, count, delta, seed, params);
-			fmt::print("eps = {}, beta = {}, ac = {}\n", eps, beta,
-			           util::correlationTime(data));
+			auto result =
+			    runMarkov(*action, count, spacing, delta, seed, params);
+			fmt::print(
+			    "eps = {}, beta = {}, mom2 = {}, mom4 = {}, ac(mom2) = {}\n",
+			    eps, beta, mean(result.moment2), mean(result.moment4),
+			    util::correlationTime(result.moment2));
 
 			if (file)
 			{
-				auto set = file.createData(fmt::format("chain_{}", i++), data);
-				set.setAttribute("eps", eps);
-				set.setAttribute("beta", beta);
+				{
+					auto set = file.createData(
+					    fmt::format("configs/chain_{}", i++), result.configs);
+					set.setAttribute("eps", eps);
+					set.setAttribute("beta", beta);
+				}
+				{
+					auto set = file.createData(
+					    fmt::format("moment2/chain_{}", i++), result.moment2);
+					set.setAttribute("eps", eps);
+					set.setAttribute("beta", beta);
+				}
+				{
+					auto set = file.createData(
+					    fmt::format("moment4/chain_{}", i++), result.moment4);
+					set.setAttribute("eps", eps);
+					set.setAttribute("beta", beta);
+				}
 			}
 
 			if (eps_count == 1)
 				xs.push_back(beta);
 			else
 				xs.push_back(eps);
-			ys.push_back(variance(data));
+			ys.push_back(mean(result.moment2));
 
 			// only a single parameter-set -> show a histogram
 			if (eps_count == 1 && beta_count == 1)
 			{
 				int binCount = 100;
-				auto h = Histogram(data, binCount);
+				auto h = Histogram(result.configs, binCount);
 				double s = 0.0;
 				for (i = 0; i < binCount; ++i)
 				{
@@ -324,7 +368,7 @@ int main(int argc, char **argv)
 					           std::exp(-action->S(x)));
 				}
 				auto f = [&](double x) {
-					return data.size() / s * std::exp(-action->S(x));
+					return result.configs.size() / s * std::exp(-action->S(x));
 				};
 				Gnuplot().plotHistogram(h).plotFunction(f, h.mins.front(),
 				                                        h.maxs.back());
