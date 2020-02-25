@@ -15,22 +15,26 @@ hid_t enforce(hid_t id)
 }
 } // namespace
 
-DataSet::DataSet(hid_t id_) : DataObject(id_)
+DataObject::~DataObject() {}
+
+DataSet::DataSet(hid_t id) : DataObject(id)
 {
-	if (id <= 0)
+	if (id_ == 0)
 		return;
-	auto space = enforce(H5Dget_space(id));
+	auto space = enforce(H5Dget_space(id_));
 	size_ = H5Sget_simple_extent_npoints(space);
 	shape_.resize(64);
 	auto rank = H5Sget_simple_extent_dims(space, &shape_[0], nullptr);
 	shape_.resize(rank);
-	H5Sclose(space);
+	enforce(H5Sclose(space));
 }
 
 void DataSet::close()
 {
-	if (id > 0)
-		H5Dclose(id);
+	if (id_ == 0)
+		return;
+	enforce(H5Dclose(id_));
+	id_ = 0;
 }
 
 DataSet::~DataSet() { close(); }
@@ -38,7 +42,7 @@ DataSet::~DataSet() { close(); }
 void DataSet::read(span<double> data)
 {
 	assert(data.size() == size_);
-	enforce(H5Dread(id, H5T_NATIVE_DOUBLE, 0, 0, 0, data.data()));
+	enforce(H5Dread(id_, H5T_NATIVE_DOUBLE, 0, 0, 0, data.data()));
 }
 
 template <> std::vector<double> DataSet::read<double>()
@@ -51,12 +55,12 @@ template <> std::vector<double> DataSet::read<double>()
 void DataSet::write(span<const double> data)
 {
 	assert(data.size() == size_);
-	enforce(H5Dwrite(id, H5T_NATIVE_DOUBLE, 0, 0, 0, data.data()));
+	enforce(H5Dwrite(id_, H5T_NATIVE_DOUBLE, 0, 0, 0, data.data()));
 }
 
 void DataSet::write(hsize_t row, span<const double> data)
 {
-	assert(id > 0);
+	assert(id_ > 0);
 	assert(row < shape_[0]);
 	assert(data.size() == size_ / shape_[0]);
 
@@ -66,14 +70,14 @@ void DataSet::write(hsize_t row, span<const double> data)
 	    enforce(H5Screate_simple(shape_.size() - 1, &shape_[1], nullptr));
 	std::vector<hsize_t> rowShape = shape_;
 	rowShape[0] = 1;
-	auto space = enforce(H5Dget_space(id));
+	auto space = enforce(H5Dget_space(id_));
 	H5Sselect_hyperslab(space, H5S_SELECT_SET, offset.data(), nullptr,
 	                    rowShape.data(), nullptr);
 
-	enforce(H5Dwrite(id, H5T_NATIVE_DOUBLE, memspace, space, 0, data.data()));
+	enforce(H5Dwrite(id_, H5T_NATIVE_DOUBLE, memspace, space, 0, data.data()));
 
-	H5Sclose(memspace);
-	H5Sclose(space);
+	enforce(H5Sclose(memspace));
+	enforce(H5Sclose(space));
 }
 
 DataFile::~DataFile() { close(); }
@@ -94,26 +98,27 @@ DataFile DataFile::open(const std::string &filename, bool writeable)
 
 void DataFile::close()
 {
-	if (id > 0)
-		enforce(H5Fclose(id));
-	id = 0;
+	if (id_ == 0)
+		return;
+	enforce(H5Fclose(id_));
+	id_ = 0;
 }
 
 DataSet DataFile::createData(const std::string &name,
                              const std::vector<hsize_t> &size)
 {
-	assert(id > 0);
+	assert(id_ > 0);
 	auto type = H5T_NATIVE_DOUBLE;
 	auto space = enforce(H5Screate_simple(size.size(), size.data(), nullptr));
-	auto set = enforce(H5Dcreate2(id, name.c_str(), type, space, 0, 0, 0));
-	H5Sclose(space);
+	auto set = enforce(H5Dcreate2(id_, name.c_str(), type, space, 0, 0, 0));
+	enforce(H5Sclose(space));
 	return DataSet(set);
 }
 
 DataSet DataFile::openData(const std::string &name)
 {
-	assert(id > 0);
-	auto set = enforce(H5Dopen2(id, name.c_str(), 0));
+	assert(id_ > 0);
+	auto set = enforce(H5Dopen2(id_, name.c_str(), 0));
 	return DataSet(set);
 }
 
@@ -143,43 +148,43 @@ DataSet DataFile::createData(const std::string &name,
 
 bool DataFile::exists(const std::string &name)
 {
-	assert(id > 0);
-	return enforce(H5Lexists(id, name.c_str(), 0)) > 0;
+	assert(id_ > 0);
+	return enforce(H5Lexists(id_, name.c_str(), 0)) > 0;
 }
 
 void DataFile::remove(const std::string &name)
 {
-	assert(id > 0);
-	enforce(H5Ldelete(id, name.c_str(), 0));
+	assert(id_ > 0);
+	enforce(H5Ldelete(id_, name.c_str(), 0));
 }
 
-void DataFile::makeGroup(const std::string &name)
+void DataFile::createGroup(const std::string &name)
 {
-	assert(id > 0);
-	auto group = enforce(H5Gcreate2(id, name.c_str(), 0, 0, 0));
-	H5Gclose(group);
+	assert(id_ > 0);
+	auto group = enforce(H5Gcreate2(id_, name.c_str(), 0, 0, 0));
+	enforce(H5Gclose(group));
 }
 
 void DataObject::setAttribute(const std::string &name, hid_t type,
                               const void *v)
 {
-	assert(id > 0);
+	assert(id_ > 0);
 	auto space = enforce(H5Screate(H5S_SCALAR));
-	auto attr = enforce(H5Acreate2(id, name.c_str(), type, space, 0, 0));
+	auto attr = enforce(H5Acreate2(id_, name.c_str(), type, space, 0, 0));
 	enforce(H5Awrite(attr, type, v));
-	H5Aclose(attr);
-	H5Sclose(space);
+	enforce(H5Aclose(attr));
+	enforce(H5Sclose(space));
 }
 
 void DataObject::setAttribute(const std::string &name, hid_t type,
                               hsize_t count, const void *v)
 {
-	assert(id > 0);
+	assert(id_ > 0);
 	auto space = enforce(H5Screate_simple(1, &count, nullptr));
-	auto attr = enforce(H5Acreate2(id, name.c_str(), type, space, 0, 0));
+	auto attr = enforce(H5Acreate2(id_, name.c_str(), type, space, 0, 0));
 	enforce(H5Awrite(attr, type, v));
-	H5Aclose(attr);
-	H5Sclose(space);
+	enforce(H5Aclose(attr));
+	enforce(H5Sclose(space));
 }
 
 void DataObject::setAttribute(const std::string &name, double v)
@@ -198,7 +203,7 @@ void DataObject::setAttribute(const std::string &name, const std::string &v)
 	enforce(H5Tset_size(type, H5T_VARIABLE));
 	const char *ptr = v.c_str();
 	setAttribute(name, type, &ptr);
-	H5Tclose(type);
+	enforce(H5Tclose(type));
 }
 
 void DataObject::setAttribute(const std::string &name, span<const double> v)
@@ -213,20 +218,21 @@ void DataObject::setAttribute(const std::string &name, span<const int> v)
 
 void DataObject::getAttribute(const std::string &name, hid_t type, void *data)
 {
+	assert(id_ > 0);
 	// open attribute
-	auto attr = enforce(H5Aopen(id, name.c_str(), 0));
+	auto attr = enforce(H5Aopen(id_, name.c_str(), 0));
 
 	// check size
 	auto space = enforce(H5Aget_space(attr));
 	auto size = H5Sget_simple_extent_npoints(space);
-	H5Sclose(space);
+	enforce(H5Sclose(space));
 	if (size != 1)
 		throw std::runtime_error("HDF5 error: wrong attribute size");
 
 	// read attribute
 	enforce(H5Aread(attr, type, data));
 
-	H5Aclose(attr);
+	enforce(H5Aclose(attr));
 }
 
 template <> int DataObject::getAttribute<int>(const std::string &name)
@@ -254,7 +260,7 @@ std::string DataObject::getAttribute<std::string>(const std::string &name)
 	auto r = std::string(ptr);
 	free(ptr);
 
-	H5Tclose(type);
+	enforce(H5Tclose(type));
 	return r;
 }
 
@@ -262,19 +268,21 @@ template <>
 std::vector<int>
 DataObject::getAttribute<std::vector<int>>(const std::string &name)
 {
+	assert(id_ > 0);
+
 	// open attribute
-	auto attr = enforce(H5Aopen(id, name.c_str(), 0));
+	auto attr = enforce(H5Aopen(id_, name.c_str(), 0));
 
 	// check size
 	auto space = enforce(H5Aget_space(attr));
 	auto size = H5Sget_simple_extent_npoints(space);
 	auto r = std::vector<int>(size);
-	H5Sclose(space);
+	enforce(H5Sclose(space));
 
 	// read attribute
 	enforce(H5Aread(attr, H5T_NATIVE_INT, r.data()));
 
-	H5Aclose(attr);
+	enforce(H5Aclose(attr));
 	return r;
 }
 
@@ -283,18 +291,18 @@ std::vector<double>
 DataObject::getAttribute<std::vector<double>>(const std::string &name)
 {
 	// open attribute
-	auto attr = enforce(H5Aopen(id, name.c_str(), 0));
+	auto attr = enforce(H5Aopen(id_, name.c_str(), 0));
 
 	// check size
 	auto space = enforce(H5Aget_space(attr));
 	auto size = H5Sget_simple_extent_npoints(space);
 	auto r = std::vector<double>(size);
-	H5Sclose(space);
+	enforce(H5Sclose(space));
 
 	// read attribute
 	enforce(H5Aread(attr, H5T_NATIVE_DOUBLE, r.data()));
 
-	H5Aclose(attr);
+	enforce(H5Aclose(attr));
 	return r;
 }
 

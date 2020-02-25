@@ -22,12 +22,14 @@ class DataObject
 	void getAttribute(const std::string &name, hid_t type, void *data);
 
   protected:
-	hid_t id = 0;
+	hid_t id_ = 0;
 
 	DataObject() = default;
-	DataObject(hid_t id) : id(id) {}
+	explicit DataObject(hid_t id) : id_(id) {}
 
   public:
+	virtual ~DataObject() = 0;
+
 	/** attributes */
 	void setAttribute(const std::string &name, double v);
 	void setAttribute(const std::string &name, int v);
@@ -51,23 +53,23 @@ class DataSet : public DataObject
 	/** non copyable but movable */
 	DataSet(const DataSet &) = delete;
 	DataSet &operator=(const DataSet &) = delete;
-	DataSet(DataSet &&f) : DataObject(f.id), size_(f.size_), shape_(f.shape_)
+	DataSet(DataSet &&f) : DataObject(f.id_), size_(f.size_), shape_(f.shape_)
 	{
-		f.id = 0;
+		f.id_ = 0;
 	};
 	DataSet &operator=(DataSet &&f)
 	{
 		close();
-		id = f.id;
+		id_ = f.id_;
 		size_ = f.size_;
 		shape_ = f.shape_;
-		f.id = 0;
+		f.id_ = 0;
 		return *this;
 	}
 
 	DataSet() = default;
 	explicit DataSet(hid_t id);
-	~DataSet();
+	~DataSet() override;
 	void close();
 
 	/** write the whole dataset */
@@ -83,29 +85,29 @@ class DataSet : public DataObject
 
 class DataFile : public DataObject
 {
-	explicit DataFile(hid_t id_) : DataObject(id_) {}
+	explicit DataFile(hid_t id) : DataObject(id) {}
 
   public:
 	/** non copyable but movable */
 	DataFile(const DataFile &) = delete;
 	DataFile &operator=(const DataFile &) = delete;
-	DataFile(DataFile &&f) : DataObject(f.id) { f.id = 0; };
+	DataFile(DataFile &&f) : DataObject(f.id_) { f.id_ = 0; };
 	DataFile &operator=(DataFile &&f)
 	{
 		close();
-		id = f.id;
-		f.id = 0;
+		id_ = f.id_;
+		f.id_ = 0;
 		return *this;
 	}
 
 	/** open/close */
 	DataFile() = default;
-	~DataFile();
+	~DataFile() override;
 	static DataFile create(const std::string &filename, bool overwrite = false);
 	static DataFile open(const std::string &filename, bool writeable = false);
 	void close();
 
-	explicit operator bool() const { return id != 0; }
+	explicit operator bool() const { return id_ != 0; }
 
 	/** general object access */
 	bool exists(const std::string &name);
@@ -124,7 +126,7 @@ class DataFile : public DataObject
 	DataSet createData(const std::string &name, const vector2d<double> &data);
 
 	/** groups */
-	void makeGroup(const std::string &name);
+	void createGroup(const std::string &name);
 };
 
 } // namespace util

@@ -4,6 +4,7 @@
 #include "util/hdf5.h"
 #include "util/random.h"
 #include "util/stats.h"
+#include <memory>
 #include <random>
 
 using namespace util;
@@ -27,40 +28,40 @@ class Harmonic : public Action
 class DoubleWell : public Action
 {
   public:
-	double beta;
-	explicit DoubleWell(double beta = 1.0) : beta(beta) {}
+	double beta_;
+	explicit DoubleWell(double beta = 1.0) : beta_(beta) {}
 	virtual double S(double x) const override
 	{
 		if (x < -1.0)
-			return beta * ((x + 1.0) * (x + 1.0));
+			return beta_ * ((x + 1.0) * (x + 1.0));
 		if (x > 1.0)
-			return beta * ((x - 1.0) * (x - 1.0));
-		return (beta * 0.25) * (x * x - 1.0) * (x * x - 1.0);
+			return beta_ * ((x - 1.0) * (x - 1.0));
+		return (beta_ * 0.25) * (x * x - 1.0) * (x * x - 1.0);
 	}
 	virtual double Sd(double x) const override
 	{
 		if (x < -1.0)
-			return beta * (2.0 * x + 2.0);
+			return beta_ * (2.0 * x + 2.0);
 		if (x > 1.0)
-			return beta * (2.0 * x - 2.0);
-		return beta * (x * x * x - x);
+			return beta_ * (2.0 * x - 2.0);
+		return beta_ * (x * x * x - x);
 	}
 };
 
 class Periodic : public Action
 {
   public:
-	double beta;
-	explicit Periodic(double beta) : beta(beta) {}
+	double beta_;
+	explicit Periodic(double beta) : beta_(beta) {}
 	virtual double S(double x) const override
 	{
 		double scale = 2.0 * M_PI;
-		return -beta * std::cos(x * scale);
+		return -beta_ * std::cos(x * scale);
 	}
 	virtual double Sd(double x) const override
 	{
 		double scale = 2.0 * M_PI;
-		return beta * std::sin(x * scale) * scale;
+		return beta_ * std::sin(x * scale) * scale;
 	}
 	virtual double normalize(double x) const override
 	{
@@ -75,17 +76,18 @@ class Periodic : public Action
 class PeriodicWell : public Action
 {
   public:
-	double beta, a;
-	explicit PeriodicWell(double beta = 1.0, double a = 1.0) : beta(beta), a(a)
+	double beta_, a_;
+	explicit PeriodicWell(double beta = 1.0, double a = 1.0)
+	    : beta_(beta), a_(a)
 	{}
 
 	virtual double S(double x) const override
 	{
-		return beta * (0.5 * x * x - a * std::cos(2 * M_PI * x));
+		return beta_ * (0.5 * x * x - a_ * std::cos(2 * M_PI * x));
 	}
 	virtual double Sd(double x) const override
 	{
-		return beta * (x + a * 2 * M_PI * std::sin(2 * M_PI * x));
+		return beta_ * (x + a_ * 2 * M_PI * std::sin(2 * M_PI * x));
 	}
 };
 
@@ -167,6 +169,10 @@ MarkovResults runMarkov(const Action &action, int64_t count, size_t spacing,
 
 int main(int argc, char **argv)
 {
+	/*auto myFile = DataFile::create("test.h5", false);
+	auto mySet = myFile.createData("kasjfhk", {40});
+	myFile.close();*/
+
 	CLI::App app{"1D toy model to test ideas about Markov processes"};
 
 	std::string action_name = "";
@@ -174,6 +180,7 @@ int main(int argc, char **argv)
 	int spacing = 5;
 	std::string filename = "";
 	bool force = false;
+	bool doPlot = false;
 	bool rescaling = true;
 	int seed = -1;
 
@@ -190,6 +197,7 @@ int main(int argc, char **argv)
 	app.add_option("--spacing", spacing);
 	app.add_option("--filename", filename);
 	app.add_flag("--force", force);
+	app.add_flag("--plot", doPlot);
 	app.add_option("--rescaling", rescaling);
 	app.add_option("--seed", seed, "PRNG seed. -1 for unpredictable");
 
@@ -281,13 +289,15 @@ int main(int argc, char **argv)
 		file = DataFile::create(filename, force);
 		file.setAttribute("action", action_name);
 		file.setAttribute("scheme", scheme);
-		file.makeGroup("configs");
-		file.makeGroup("moment2");
-		file.makeGroup("moment4");
+		file.createGroup("configs");
+		file.createGroup("moment2");
+		file.createGroup("moment4");
 	}
 	int i = 1;
 
-	auto plot = Gnuplot();
+	std::unique_ptr<Gnuplot> plot;
+	if (doPlot)
+		plot = std::make_unique<Gnuplot>();
 
 	for (int beta_i = 0; beta_i < beta_count; ++beta_i)
 	{
@@ -355,7 +365,7 @@ int main(int argc, char **argv)
 			ys.push_back(mean(result.moment2));
 
 			// only a single parameter-set -> show a histogram
-			if (eps_count == 1 && beta_count == 1)
+			if (doPlot && eps_count == 1 && beta_count == 1)
 			{
 				int binCount = 100;
 				auto h = Histogram(result.configs, binCount);
@@ -374,10 +384,7 @@ int main(int argc, char **argv)
 				                                        h.maxs.back());
 			}
 		}
-		if (eps_count > 1 || beta_count > 1)
-			plot.plotData(xs, ys, fmt::format("beta = {}", beta));
+		if (doPlot && (eps_count > 1 || beta_count > 1))
+			plot->plotData(xs, ys, fmt::format("beta = {}", beta));
 	}
-
-	if (file)
-		file.close();
 }
