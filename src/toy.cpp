@@ -106,6 +106,7 @@ struct MarkovResults
 	std::vector<double> configs;
 	std::vector<double> moment2;
 	std::vector<double> moment4;
+	std::vector<double> moment6;
 };
 
 MarkovResults runMarkov(const Action &action, int64_t count, size_t spacing,
@@ -124,11 +125,13 @@ MarkovResults runMarkov(const Action &action, int64_t count, size_t spacing,
 	result.configs.reserve(count);
 	result.moment2.reserve(count);
 	result.moment4.reserve(count);
+	result.moment6.reserve(count);
 	double seps = std::sqrt(eps);
 	for (int64_t i = -count / 4; i < count; ++i)
 	{
 		double moment2 = 0;
 		double moment4 = 0;
+		double moment6 = 0;
 		for (size_t iter = 0; iter < spacing; ++iter)
 		{
 			double eta1 = dist(rng);
@@ -166,6 +169,7 @@ MarkovResults runMarkov(const Action &action, int64_t count, size_t spacing,
 
 			moment2 += x * x;
 			moment4 += (x * x) * (x * x);
+			moment6 += (x * x) * (x * x) * (x * x);
 		}
 
 		if (i >= 0)
@@ -173,6 +177,7 @@ MarkovResults runMarkov(const Action &action, int64_t count, size_t spacing,
 			result.configs.push_back(x);
 			result.moment2.push_back(moment2 / spacing);
 			result.moment4.push_back(moment4 / spacing);
+			result.moment6.push_back(moment6 / spacing);
 		}
 	}
 	return result;
@@ -327,6 +332,7 @@ int main(int argc, char **argv)
 		file.createGroup("configs");
 		file.createGroup("moment2");
 		file.createGroup("moment4");
+		file.createGroup("moment6");
 	}
 	int i = 1;
 
@@ -388,6 +394,12 @@ int main(int argc, char **argv)
 				{
 					auto set = file.createData(
 					    fmt::format("moment4/chain_{}", i++), result.moment4);
+					set.setAttribute("eps", eps);
+					set.setAttribute("beta", beta);
+				}
+				{
+					auto set = file.createData(
+					    fmt::format("moment6/chain_{}", i++), result.moment6);
 					set.setAttribute("eps", eps);
 					set.setAttribute("beta", beta);
 				}
