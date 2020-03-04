@@ -91,12 +91,14 @@ class PeriodicWell : public Action
 	}
 };
 
-// parameters of a general 3-step scheme
+// parameters of a general 1/2/3/4-step scheme
 struct IntegratorParams
 {
 	int steps = -1;
-	double k1 = 0, k2 = 0, k3 = 0, k4 = 0, k5 = 0, k6 = 0;
-	double c1 = 0, c2 = 0, c3 = 0, c4 = 0, c5 = 0, c6 = 0;
+	double k1 = 0, k2 = 0, k3 = 0, k4 = 0, k5 = 0, k6 = 0, k7 = 0, k8 = 0,
+	       k9 = 0, k10 = 0;
+	double c1 = 0, c2 = 0, c3 = 0, c4 = 0, c5 = 0, c6 = 0, c7 = 0, c8 = 0,
+	       c9 = 0, c10 = 0;
 };
 
 struct MarkovResults
@@ -132,6 +134,7 @@ MarkovResults runMarkov(const Action &action, int64_t count, size_t spacing,
 			double eta1 = dist(rng);
 			double eta2 = dist(rng);
 			double eta3 = dist(rng);
+			double eta4 = dist(rng);
 
 			double f1 =
 			    params.k1 * eps * action.Sd(x) + params.c1 * seps * eta1;
@@ -143,12 +146,20 @@ MarkovResults runMarkov(const Action &action, int64_t count, size_t spacing,
 			            params.k6 * eps * action.Sd(x - f2) +
 			            params.c4 * seps * eta1 + params.c5 * seps * eta2 +
 			            params.c6 * seps * eta3;
+			double f4 = params.k7 * eps * action.Sd(x) +
+			            params.k8 * eps * action.Sd(x - f1) +
+			            params.k9 * eps * action.Sd(x - f2) +
+			            params.k10 * eps * action.Sd(x - f3) +
+			            params.c7 * seps * eta1 + params.c8 * seps * eta2 +
+			            params.c9 * seps * eta3 + params.c10 * seps * eta4;
 			if (params.steps == 1)
 				x -= f1;
 			else if (params.steps == 2)
 				x -= f2;
 			else if (params.steps == 3)
 				x -= f3;
+			else if (params.steps == 4)
+				x -= f4;
 			else
 				assert(false);
 			x = action.normalize(x);
@@ -276,6 +287,30 @@ int main(int argc, char **argv)
 		params.c4 = 0.905433078636425;
 		params.c5 = 0.424489034146897;
 		params.c6 = 0;
+	}
+	else if (scheme == "burger4a")
+	{
+		params.steps = 4;
+		params.k1 = 0.03908321893732925;
+		params.k2 = -0.046200419239713963;
+		params.k3 = 0.21999999999971998;
+		params.k4 = 0.020348166006750767;
+		params.k5 = 0.16889888941280423;
+		params.k6 = 0.2950852361550359;
+		params.k7 = 0.016730096231808433;
+		params.k8 = 0.433560541281889;
+		params.k9 = 0.28457665417547295;
+		params.k10 = 0.2651327083108296;
+		params.c1 = 0.1976947620381715;
+		params.c2 = 0.31300617291850696;
+		params.c3 = 0.2753665129875376;
+		params.c4 = 0.2726958234381351;
+		params.c5 = 0.6402884345777209;
+		params.c6 = 0;
+		params.c7 = 0.6112713096065316;
+		params.c8 = 0.791421118022457;
+		params.c9 = 0;
+		params.c10 = 0;
 	}
 	else
 	{
