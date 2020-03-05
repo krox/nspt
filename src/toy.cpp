@@ -204,9 +204,9 @@ int main(int argc, char **argv)
 	double beta_max = 1.0;
 	double beta_count = 1;
 
-	double eps_min = 0.02;
 	double eps_max = 0.2;
 	int eps_count = 20;
+	bool quadratic_scale = false;
 
 	app.add_option("--action", action_name);
 	app.add_option("--count", count);
@@ -217,8 +217,9 @@ int main(int argc, char **argv)
 	app.add_option("--rescaling", rescaling);
 	app.add_option("--seed", seed, "PRNG seed. -1 for unpredictable");
 
-	app.add_option("--eps_min", eps_min);
 	app.add_option("--eps_max", eps_max);
+	app.add_flag("--quadratic", quadratic_scale,
+	             "equally spaced eps^2 (instead of eps)");
 	app.add_option("--eps_count", eps_count);
 
 	app.add_option("--beta_min", beta_min);
@@ -350,11 +351,11 @@ int main(int argc, char **argv)
 		std::vector<double> xs, ys;
 		for (int eps_i = 0; eps_i < eps_count; ++eps_i)
 		{
-			double eps =
-			    eps_min + (eps_max - eps_min) * eps_i / (eps_count - 1);
-			if (eps_count == 1)
-				eps = eps_min;
-
+			double eps;
+			if (quadratic_scale)
+				eps = eps_max * std::sqrt((double)(eps_i + 1) / eps_count);
+			else
+				eps = eps_max * (double)(eps_i + 1) / eps_count;
 			double delta = eps;
 			if (rescaling)
 				delta /= beta;
@@ -407,6 +408,8 @@ int main(int argc, char **argv)
 
 			if (eps_count == 1)
 				xs.push_back(beta);
+			else if (quadratic_scale)
+				xs.push_back(eps * eps);
 			else
 				xs.push_back(eps);
 			ys.push_back(mean(result.moment2));
